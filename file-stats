@@ -1,0 +1,995 @@
+#!/usr/bin/env python3
+"""
+author: Gongshan He
+description: Command-line based File Statistics Tool (file-stats)
+"""
+##################################################################
+#                         Version Check                          #
+##################################################################
+import sys
+
+# check the version of python
+if sys.version_info < (3, 5):
+    print('Error: Python 3.5 or higher is required.')
+    sys.exit(1)
+
+import argparse
+import concurrent.futures
+import csv
+import json
+import math
+import os
+import re
+import fnmatch
+import shutil
+import stat
+from datetime import datetime
+from enum import Enum
+from time import time
+from typing import Dict, Tuple, List
+from collections import defaultdict
+from functools import cmp_to_key
+
+##################################################################
+#                            Constant                            #
+##################################################################
+PROJECT_NAME = 'file-stats'
+PROJECT_VERSION = '1.0'
+PROJECT_URL = f'github.com/hegongshan/{PROJECT_NAME} v{PROJECT_VERSION}'
+PROJECT_DESCRIPTION = f'{PROJECT_NAME} - Command-line based File Statistics Tool'
+
+PATTERN = ', *'
+SEPARATOR = '-'
+
+
+##################################################################
+#                           Enum Class                           #
+##################################################################
+class Platform(Enum):
+    MACOS = 'darwin'
+    LINUX = 'linux'
+    WINDOWS = 'win32'
+
+
+class FileInfo(Enum):
+    TYPE = 'type'
+    PERM = 'perm'
+    SIZE = 'size'
+    NUM_LINK = 'nlink'
+    UID = 'uid'
+    GID = 'gid'
+    CHANGE_TIME = 'ctime'
+    MODIFICATION_TIME = 'mtime'
+    BIRTH_TIME = 'btime'
+    EXTENSION = 'ext'
+    NUM_FILE = 'nfile'
+    NUM_LINE = 'nline'
+
+
+class FileType(Enum):
+    FILE = 'file'
+    DIR = 'dir'
+    SYMLINK = 'symlink'
+    CHARACTER = 'character'
+    BLOCK = 'block'
+    PIPE = 'pipe'
+    SOCKET = 'socket'
+    UNKNOWN = 'unknown'
+
+
+class BaseUnit(Enum):
+    """
+    Reference link: https://en.wikipedia.org/wiki/Byte#Multiple-byte_units
+    """
+    IEC = 1024  # International Electrotechnical Commission
+    SI = 1000  # International System of Units
+
+
+class SizeUnit(Enum):
+    B = 'B'
+
+    # IEC
+    KIB = 'KiB'
+    MIB = 'MiB'
+    GIB = 'GiB'
+    TIB = 'TiB'
+    PIB = 'PiB'
+
+    # SI
+    KB = 'KB'
+    MB = 'MB'
+    GB = 'GB'
+    TB = 'TB'
+    PB = 'PB'
+
+
+class PlotType(Enum):
+    BAR = 'bar'
+    PIE = 'pie'
+    CDF = 'cdf'  # Cumulative Distribution Function
+
+
+##################################################################
+#                         Utility Class                          #
+##################################################################
+class FileUtil(object):
+
+    @staticmethod
+    def get_file_type(file_stat):
+        if stat.S_ISDIR(file_stat.st_mode):
+            return FileType.DIR.value
+
+        if stat.S_ISREG(file_stat.st_mode):
+            return FileType.FILE.value
+
+        if stat.S_ISLNK(file_stat.st_mode):
+            return FileType.SYMLINK.value
+
+        if stat.S_ISCHR(file_stat.st_mode):
+            return FileType.CHARACTER.value
+
+        if stat.S_ISBLK(file_stat.st_mode):
+            return FileType.BLOCK.value
+
+        if stat.S_ISSOCK(file_stat.st_mode):
+            return FileType.SOCKET.value
+
+        if stat.S_ISFIFO(file_stat.st_mode):
+            return FileType.PIPE.value
+
+        return FileType.UNKNOWN.value
+
+    @staticmethod
+    def calculate_file_lines(pathname):
+        try:
+            count = 0
+            with open(pathname, 'r') as file:
+                for _ in file:
+                    count += 1
+        except UnicodeDecodeError:
+            count = 0
+            with open(pathname, 'rb') as file:
+                for _ in file:
+                    count += 1
+        return count
+
+    @staticmethod
+    def to_csv(filename, header, data):
+        with open(filename, 'w+') as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow(header)
+            csv_writer.writerows(data)
+
+    @staticmethod
+    def is_hidden_file(filename) -> bool:
+        if not filename:
+            return False
+
+        if sys.platform == Platform.WINDOWS.value:
+            stat_result = os.lstat(filename)
+            return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
+
+        return filename[0] == '.'
+
+    @staticmethod
+    def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, str]:
+        assert size >= 0
+
+        std_sizes = [base, base ** 2, base ** 3, base ** 4, base ** 5]
+        if 0 <= size < std_sizes[0]:
+            return 0, SizeUnit.B.value
+        if std_sizes[0] <= size < std_sizes[1]:
+            return 1, SizeUnit.KIB.value if base == BaseUnit.IEC.value else SizeUnit.KB.value
+        if std_sizes[1] <= size < std_sizes[2]:
+            return 2, SizeUnit.MIB.value if base == BaseUnit.IEC.value else SizeUnit.MB.value
+        if std_sizes[2] <= size < std_sizes[3]:
+            return 3, SizeUnit.GIB.value if base == BaseUnit.IEC.value else SizeUnit.GB.value
+        if std_sizes[3] <= size < std_sizes[4]:
+            return 4, SizeUnit.TIB.value if base == BaseUnit.IEC.value else SizeUnit.TB.value
+        return 5, SizeUnit.PIB.value if base == BaseUnit.IEC.value else SizeUnit.PB.value
+
+    @staticmethod
+    def get_suitable_size(size: float, base: int) -> str:
+        exp, unit = FileUtil.get_suitable_exp_and_unit(size, base)
+        return f'{size / (base ** exp)} {unit}'
+
+
+class GenericUtil(object):
+
+    @staticmethod
+    def flatten_dict(data: Dict):
+        flatten_list = []
+        for k, v in data.items():
+            if isinstance(v, dict):
+                sublist = GenericUtil.flatten_dict(v)
+                for item in sublist:
+                    flatten_list.append([k] + item)
+            else:
+                flatten_list.append([k, v])
+        return flatten_list
+
+    @staticmethod
+    def flatten_nfile_dict(data: Dict):
+        flatten_list = []
+        for path, nfile in data.items():
+            flatten_list.append([path] + [num for ft, num in nfile.items()])
+        return flatten_list
+
+    @staticmethod
+    def print_error(message):
+        print(f'\033[91m{message}\033[0m')
+
+
+class PlotUtil(object):
+    @staticmethod
+    def calculate_cdf(x, total, data):
+        count = 0
+        for item in data:
+            if item[-2] <= x[-2]:
+                count += item[-1]
+        return count / total
+
+    @staticmethod
+    def plot(data, plot_name=None, plot_type=PlotType.BAR.value):
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+        except ImportError:
+            GenericUtil.print_error('pip install matplotlib')
+            exit(1)
+
+        if plot_type == PlotType.CDF.value:
+            sorted_data = sorted(data, key=lambda item: item[-2])
+
+            total = sum([item[-1] for item in sorted_data])
+            cdf_values = [PlotUtil.calculate_cdf(item, total, sorted_data) for item in sorted_data]
+
+            half_x = 0
+            for idx, val in enumerate(cdf_values):
+                if val >= 0.5:
+                    half_x = idx
+                    break
+            plt.hlines(0.5, xmin=0, xmax=half_x, colors='gray', linestyles='dashed')
+            plt.vlines(half_x, ymin=0, ymax=0.5, colors='gray', linestyles='dashed')
+
+            plt.plot(cdf_values)
+        else:
+            x = ['_'.join(map(str, item[:-1])) for item in data]
+            y = [item[-1] for item in data]
+
+            if plot_type == PlotType.BAR.value:
+                plt.bar(x, y)
+                for x_idx, y_val in enumerate(y):
+                    plt.text(x_idx, y_val + 2, y_val, ha='center')
+                plt.xticks(rotation=-45)
+            else:
+                assert plot_type == PlotType.PIE.value
+                plt.pie(y, labels=x, autopct='%1.1f%%', startangle=140, labeldistance=1.1)
+
+        if plot_name:
+            plt.savefig(plot_name)
+        else:
+            plt.show()
+
+
+##################################################################
+#                           Core Class                           #
+##################################################################
+class FileStats(object):
+
+    def __init__(self,
+                 rootdir: str,
+                 require_type: bool = True,
+                 require_size: bool = False,
+                 require_perm: bool = False,
+                 require_nlink: bool = False,
+                 require_uid: bool = False,
+                 require_gid: bool = False,
+                 require_ctime: bool = False,
+                 require_mtime: bool = False,
+                 require_btime: bool = False,
+                 require_ext: bool = False,
+                 require_nfile: bool = False,
+                 require_nline: bool = False,
+                 exclude_dirs: List[str] = None,
+                 exclude_files: List[str] = None,
+                 exclude_exts: List[str] = None,
+                 exclude_pattern: str = None,
+                 use_name: bool = False,
+                 verbose: bool = False,
+                 ignore_hidden_file: bool = False,
+                 jobs: int = 1):
+        self.rootdir = rootdir
+
+        self._require_type = require_type
+        self._require_perm = require_perm
+        self._require_size = require_size
+        self._require_nlink = require_nlink
+        self._require_uid = require_uid
+        self._require_gid = require_gid
+        self._require_ctime = require_ctime
+        self._require_mtime = require_mtime
+        self._require_btime = require_btime
+        self._require_ext = require_ext
+        self._require_nfile = require_nfile
+        self._require_nline = require_nline
+
+        self._exclude_dirs = exclude_dirs
+        self._exclude_files = exclude_files
+        self._exclude_exts = exclude_exts
+        self._exclude_patten = exclude_pattern
+
+        self._use_name = use_name
+        self._verbose = verbose
+        self._ignore_hidden_file = ignore_hidden_file
+        self._jobs = jobs
+
+        self._data_dict = defaultdict(dict)
+
+        self._start_time = time()
+        self._count(self.rootdir)
+        self._end_time = time()
+
+    @property
+    def time(self) -> float:
+        return self._end_time - self._start_time
+
+    @property
+    def data(self) -> Dict:
+        return self._data_dict
+
+    def _count(self, dirname):
+        if self._jobs == 1:
+            self._count_internal(dirname)
+        else:
+            subdir = self._count_internal(dirname, recursive=False)
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                executor.map(self._count_internal, subdir)
+
+    def _count_internal(self, dirname, recursive=True) -> List:
+        if self._verbose:
+            print(f'dir {dirname}')
+
+        subdir = []
+        for filename in os.listdir(dirname):
+            pathname = os.path.join(dirname, filename)
+
+            file_stat = os.lstat(pathname)
+            file_type = FileUtil.get_file_type(file_stat)
+            is_dir = file_type == FileType.DIR.value
+
+            if self._verbose:
+                print(f'{file_type}: {pathname}')
+
+            if self._ignore_hidden_file and FileUtil.is_hidden_file(filename):
+                continue
+
+            if self._exclude_dirs and is_dir and filename in self._exclude_dirs:
+                if self._verbose:
+                    print(f'exclude {pathname}')
+                continue
+
+            if self._exclude_files and not is_dir and filename in self._exclude_files:
+                if self._verbose:
+                    print(f'exclude {pathname}')
+                continue
+
+            if self._exclude_exts and not is_dir and os.path.splitext(filename)[1] in self._exclude_exts:
+                if self._verbose:
+                    print(f'exclude {pathname}')
+                continue
+
+            if self._exclude_patten and fnmatch.fnmatch(filename, self._exclude_patten):
+                continue
+
+            if self._require_type:
+                self._data_dict[FileInfo.TYPE.value].setdefault(file_type, 0)
+                self._data_dict[FileInfo.TYPE.value][file_type] += 1
+
+            if self._require_perm:
+                perm = oct(file_stat.st_mode)[-3:]
+                self._data_dict[FileInfo.PERM.value].setdefault(file_type, {})
+                self._data_dict[FileInfo.PERM.value][file_type].setdefault(perm, 0)
+                self._data_dict[FileInfo.PERM.value][file_type][perm] += 1
+
+            if self._require_size and not is_dir:
+                size = file_stat.st_size
+                self._data_dict[FileInfo.SIZE.value].setdefault(size, 0)
+                self._data_dict[FileInfo.SIZE.value][size] += 1
+
+            if self._require_nlink:
+                nlink = file_stat.st_nlink
+                self._data_dict[FileInfo.NUM_LINK.value][file_type].setdefault(nlink, 0)
+                self._data_dict[FileInfo.NUM_LINK.value][file_type][nlink] += 1
+
+            if self._require_uid:
+                uid = file_stat.st_uid
+                if self._use_name:
+                    import pwd
+                    uid = pwd.getpwuid(uid).pw_name
+
+                self._data_dict[FileInfo.UID.value].setdefault(uid, 0)
+                self._data_dict[FileInfo.UID.value][uid] += 1
+
+            if self._require_gid:
+                gid = file_stat.st_gid
+                if self._use_name:
+                    import grp
+                    gid = grp.getgrgid(gid).gr_name
+
+                self._data_dict[FileInfo.GID.value].setdefault(gid, 0)
+                self._data_dict[FileInfo.GID.value][gid] += 1
+
+            if self._require_ctime:
+                ctime = file_stat.st_ctime
+                date = datetime.fromtimestamp(ctime).strftime('%Y-%m-%d')
+                self._data_dict[FileInfo.CHANGE_TIME.value].setdefault(date, 0)
+                self._data_dict[FileInfo.CHANGE_TIME.value][date] += 1
+
+            if self._require_mtime:
+                mtime = file_stat.st_mtime
+                date = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+                self._data_dict[FileInfo.MODIFICATION_TIME.value].setdefault(date, 0)
+                self._data_dict[FileInfo.MODIFICATION_TIME.value][date] += 1
+
+            if self._require_btime:
+                btime = file_stat.st_birthtime
+                date = datetime.fromtimestamp(btime).strftime('%Y-%m-%d')
+                self._data_dict[FileInfo.BIRTH_TIME.value].setdefault(date, 0)
+                self._data_dict[FileInfo.BIRTH_TIME.value][date] += 1
+
+            if self._require_ext:
+                if file_type == FileType.FILE.value:
+                    ext = os.path.splitext(filename)[1]
+                    ext = ext if ext else 'unknown'
+                    self._data_dict[FileInfo.EXTENSION.value].setdefault(ext, 0)
+                    self._data_dict[FileInfo.EXTENSION.value][ext] += 1
+
+            if self._require_nfile:
+                self._data_dict[FileInfo.NUM_FILE.value].setdefault(dirname, {})
+                for ft in FileType:
+                    self._data_dict[FileInfo.NUM_FILE.value][dirname].setdefault(ft.value, 0)
+                self._data_dict[FileInfo.NUM_FILE.value][dirname][file_type] += 1
+
+            if self._require_nline:
+                if file_type == FileType.FILE.value:
+                    self._data_dict[FileInfo.NUM_LINE.value].setdefault(pathname, {})
+                    self._data_dict[FileInfo.NUM_LINE.value][pathname] = FileUtil.calculate_file_lines(pathname)
+
+            if is_dir and recursive:
+                self._count(pathname)
+            else:
+                subdir.append(pathname)
+
+        return subdir
+
+    def header(self, stats_type: str):
+        if stats_type == FileInfo.SIZE.value:
+            return ['File Size', 'Number of Files']
+
+        if stats_type == FileInfo.TYPE.value:
+            return ['File Type', 'Number of Files']
+
+        if stats_type == FileInfo.PERM.value:
+            return ['File Type', 'Permission', 'Number of Files']
+
+        if stats_type == FileInfo.NUM_LINK.value:
+            return ['File Type', 'Number of Links', 'Number of Files']
+
+        if stats_type == FileInfo.UID.value:
+            if self._use_name:
+                return ['User Name', 'Number of Files']
+            return ['User ID', 'Number of Files']
+
+        if stats_type == FileInfo.GID.value:
+            if self._use_name:
+                return ['Group Name', 'Number of Files']
+            return ['Group ID', 'Number of Files']
+
+        if stats_type == FileInfo.CHANGE_TIME.value:
+            return ['Change Time', 'Number of Files']
+
+        if stats_type == FileInfo.MODIFICATION_TIME.value:
+            return ['Modification Time', 'Number of Files']
+
+        if stats_type == FileInfo.BIRTH_TIME.value:
+            return ['Birth Time', 'Number of Files']
+
+        if stats_type == FileInfo.EXTENSION.value:
+            return ['Extension', 'Number of Files']
+
+        if stats_type == FileInfo.NUM_FILE.value:
+            return ['Dir'] + [ft.value for ft in FileType]
+
+        assert stats_type == FileInfo.NUM_LINE.value
+        return ['File Name', 'Number of Lines']
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=PROJECT_DESCRIPTION)
+
+    # General options
+    parser.add_argument('-r',
+                        '--rootdir',
+                        type=str,
+                        required=True,
+                        help='Root directory')
+    parser.add_argument('-s',
+                        '--stats',
+                        nargs='+',
+                        choices=[stat_type.value for stat_type in FileInfo],
+                        default='type',
+                        help='Stats type')
+    parser.add_argument('-j',
+                        '--jobs',
+                        nargs='?',
+                        const=os.cpu_count(),
+                        default=1,
+                        type=int,
+                        help='Specify the number of jobs to run simultaneously')
+    parser.add_argument('-i',
+                        '--ignore-hidden-file',
+                        action='store_true',
+                        default=False,
+                        help='Ignore hidden files')
+
+    # Mode options
+    parser.add_argument('-v',
+                        '--verbose',
+                        action='store_true',
+                        help='Verbose mode')
+    parser.add_argument('-q',
+                        '--quiet',
+                        action='store_true',
+                        help='Quiet mode')
+
+    # Exclude options
+    parser.add_argument('--exclude-dirs',
+                        type=str,
+                        help='Exclude dirs')
+    parser.add_argument('--exclude-files',
+                        type=str,
+                        help='Exclude files')
+    parser.add_argument('--exclude-exts',
+                        type=str,
+                        help='Exclude file name extensions')
+    parser.add_argument('--exclude-pattern',
+                        type=str,
+                        help='UNIX shell pattern')
+
+    # Size options
+    size_group = parser.add_mutually_exclusive_group()
+    size_group.add_argument('-H', '--human-readable',
+                            action='store_true',
+                            help='Human-readable output. '
+                                 'Use unit suffixes: Byte, Kilobyte, Megabyte, Gigabyte, Terabyte and Petabyte '
+                                 'based on powers of 1024.')
+    size_group.add_argument('-k',
+                            '--ki',
+                            action='store_true',
+                            help='Use KiB')
+    size_group.add_argument('-m',
+                            '--mi',
+                            action='store_true',
+                            help='Use MiB')
+    size_group.add_argument('-g',
+                            '--gi',
+                            action='store_true',
+                            help='Use GiB')
+    size_group.add_argument('-t',
+                            '--ti',
+                            action='store_true',
+                            help='Use TiB')
+    size_group.add_argument('-p',
+                            '--pi',
+                            action='store_true',
+                            help='Use PiB')
+    size_group.add_argument('--si',
+                            action='store_true',
+                            help='Use international system of units (SI)')
+    parser.add_argument('--size-range',
+                        action='store_true',
+                        help='Show size range')
+
+    # uid/gid options
+    parser.add_argument('-n',
+                        '--name',
+                        action='store_true',
+                        help='Show user name or group name')
+
+    # nfile options
+    parser.add_argument('-f',
+                        '--full-path',
+                        action='store_true',
+                        default=False,
+                        help='Print the full path for each file')
+
+    # Export options
+    parser.add_argument('-o',
+                        '--output',
+                        type=str,
+                        help='Output file')
+
+    export_group = parser.add_mutually_exclusive_group()
+    export_group.add_argument('-J',
+                              '--json',
+                              action='store_true',
+                              help='Export the results in JSON format.')
+    export_group.add_argument('-C',
+                              '--csv',
+                              action='store_true',
+                              help='Export the results in CSV format.')
+
+    # Plot options
+    parser.add_argument('--plot-type',
+                        type=str,
+                        choices=[p.value for p in PlotType],
+                        help='Specify the type of the figure')
+    parser.add_argument('--plot-name',
+                        type=str,
+                        help='Specify the name of the figure')
+    return parser.parse_args()
+
+
+def get_max_width(data: List[str] or List[Tuple]):
+    if isinstance(data[0], str | int):
+        return max([len(str(entry)) for entry in data])
+
+    max_width = 0
+    for entry_list in data:
+        width = max([len(str(entry)) for entry in entry_list])
+        max_width = max(width, max_width)
+    return max_width
+
+
+def count_size_range(size_count_dict: Dict,
+                     base: int = BaseUnit.IEC.value,
+                     human_readable=True):
+    std_sizes = [base, base ** 2, base ** 3, base ** 4, base ** 5]
+
+    range_count = {}
+    for size, count in size_count_dict.items():
+        for idx, std_size in enumerate(std_sizes):
+            if size <= std_size or idx == len(std_sizes) - 1:
+                if human_readable:
+                    std_size_desc = FileUtil.get_suitable_size(std_size, base=base)
+                else:
+                    std_size_desc = std_size
+                key = f'≤ {std_size_desc}' if size <= std_size else f'> {std_size_desc}'
+                range_count.setdefault(key, 0)
+                range_count[key] += count
+                break
+    return range_count
+
+
+def compare_entry(a, b):
+    # asc
+    if a[0] < b[0]:
+        return -1
+    if a[0] > b[0]:
+        return 1
+
+    # desc
+    if a[-1] < b[-1]:
+        return 1
+    if a[-1] > b[-1]:
+        return -1
+
+    for i in range(1, len(a) - 1):
+        # asc
+        if a[i] < b[i]:
+            return -1
+        if a[i] > b[i]:
+            return 1
+
+    return 0
+
+
+def get_size_stats(stats_data, args):
+    out_list = []
+    total_size = 0
+    total_file = 0
+    max_size = 0
+    min_size = math.inf
+    for size, num in stats_data.items():
+        total_size += size * num
+        total_file += num
+        if size > max_size:
+            max_size = size
+        if size < min_size:
+            min_size = size
+
+    stats_data_list = sorted(GenericUtil.flatten_dict(stats_data),
+                             key=lambda x: x[0])
+    median_size, p90_size, p95_size, p99_size = 0, 0, 0, 0
+    num_sum = 0
+    for size, num in stats_data_list:
+        num_sum += num
+        percent = num_sum / total_file
+        if 0.5 <= percent and median_size == 0:
+            median_size = size
+
+        if 0.90 <= percent and p90_size == 0:
+            p90_size = size
+
+        if 0.95 <= percent and p95_size == 0:
+            p95_size = size
+
+        if 0.99 <= percent and p99_size == 0:
+            p99_size = size
+
+    avg_size = total_size / total_file
+
+    base = BaseUnit.IEC.value
+    if args.ki or args.mi or args.gi or args.ti or args.pi:
+        if args.ki:
+            unit = SizeUnit.KIB.value
+            exp = 1
+        elif args.mi:
+            unit = SizeUnit.MIB.value
+            exp = 2
+        elif args.gi:
+            unit = SizeUnit.GIB.value
+            exp = 3
+        elif args.ti:
+            unit = SizeUnit.TIB.value
+            exp = 4
+        else:
+            unit = SizeUnit.PIB.value
+            exp = 5
+
+        min_exp = max_exp = avg_exp = \
+            median_exp = p90_exp = p95_exp = p99_exp = \
+            total_exp = exp
+        min_unit = max_unit = avg_unit = \
+            median_unit = p90_unit = p95_unit = p99_unit = \
+            total_unit = unit
+        precision = '.3f'
+    elif args.human_readable or args.si:
+        if args.si:
+            base = BaseUnit.SI.value
+        min_exp, min_unit = FileUtil.get_suitable_exp_and_unit(min_size, base=base)
+        max_exp, max_unit = FileUtil.get_suitable_exp_and_unit(max_size, base=base)
+        avg_exp, avg_unit = FileUtil.get_suitable_exp_and_unit(avg_size, base=base)
+        median_exp, median_unit = FileUtil.get_suitable_exp_and_unit(median_size, base=base)
+        p90_exp, p90_unit = FileUtil.get_suitable_exp_and_unit(p90_size, base=base)
+        p95_exp, p95_unit = FileUtil.get_suitable_exp_and_unit(p95_size, base=base)
+        p99_exp, p99_unit = FileUtil.get_suitable_exp_and_unit(p99_size, base=base)
+        total_exp, total_unit = FileUtil.get_suitable_exp_and_unit(total_size, base=base)
+        precision = '.3f'
+    else:
+        min_exp = max_exp = avg_exp = \
+            median_exp = p90_exp = p95_exp = p99_exp = \
+            total_exp = 0
+        min_unit = max_unit = avg_unit = \
+            median_unit = p90_unit = p95_unit = p99_unit = \
+            total_unit = SizeUnit.B.value
+        precision = '.0f'
+
+    min_size = f'{min_size / (base ** min_exp):{precision}}'
+    max_size = f'{max_size / (base ** max_exp):{precision}}'
+    avg_size = f'{avg_size / (base ** avg_exp):{precision}}'
+    median_size = f'{median_size / (base ** median_exp):{precision}}'
+    p90_size = f'{p90_size / (base ** p90_exp):{precision}}'
+    p95_size = f'{p95_size / (base ** p95_exp):{precision}}'
+    p99_size = f'{p99_size / (base ** p99_exp):{precision}}'
+    total_size = f'{total_size / (base ** total_exp):{precision}}'
+
+    out_list.append(f'Min: {min_size} {min_unit}, '
+                    f'Max: {max_size} {max_unit}')
+    out_list.append(f'Avg: {avg_size} {avg_unit}, '
+                    f'Median: {median_size} {median_unit}')
+    out_list.append(f'P90: {p90_size} {p90_unit}, '
+                    f'P95: {p95_size} {p95_unit}, '
+                    f'P99: {p99_size} {p99_unit}')
+    out_list.append(f'Total Size: {total_size} {total_unit}, '
+                    f'Number of Files: {total_file}')
+    return out_list
+
+
+def main():
+    args = parse_args()
+
+    if not os.path.exists(args.rootdir):
+        GenericUtil.print_error(f'{args.rootdir} does not exist!')
+        exit(1)
+    if not os.path.isdir(args.rootdir):
+        GenericUtil.print_error(f'{args.rootdir} is not a directory!')
+        exit(1)
+    if args.full_path:
+        rootdir = os.path.abspath(args.rootdir)
+    else:
+        rootdir = args.rootdir
+
+    if isinstance(args.stats, list):
+        stats_type_set = set(args.stats)
+    else:
+        stats_type_set = {args.stats}
+
+    require_size = require_perm = require_type \
+        = require_nlink = require_uid = require_gid \
+        = require_ctime = require_mtime = require_btime \
+        = require_ext = require_nfile = require_nline = False
+    for stats_type in stats_type_set:
+        if stats_type == FileInfo.SIZE.value:
+            require_size = True
+        elif stats_type == FileInfo.PERM.value:
+            require_perm = True
+        elif stats_type == FileInfo.TYPE.value:
+            require_type = True
+        elif stats_type == FileInfo.NUM_LINK.value:
+            require_nlink = True
+        elif stats_type == FileInfo.UID.value:
+            require_uid = True
+        elif stats_type == FileInfo.GID.value:
+            require_gid = True
+        elif stats_type == FileInfo.CHANGE_TIME.value:
+            require_ctime = True
+        elif stats_type == FileInfo.MODIFICATION_TIME.value:
+            require_mtime = True
+        elif stats_type == FileInfo.BIRTH_TIME.value:
+            require_btime = True
+        elif stats_type == FileInfo.EXTENSION.value:
+            require_ext = True
+        elif stats_type == FileInfo.NUM_FILE.value:
+            require_nfile = True
+        elif stats_type == FileInfo.NUM_LINE.value:
+            require_nline = True
+
+    jobs = args.jobs if args.jobs else 1
+
+    # exclude dirs, files, and extensions
+    exclude_dirs = re.split(PATTERN, args.exclude_dirs) if args.exclude_dirs else None
+    exclude_files = re.split(PATTERN, args.exclude_files) if args.exclude_files else None
+    exclude_exts = re.split(PATTERN, args.exclude_exts) if args.exclude_exts else None
+    exclude_pattern = args.exclude_pattern if args.exclude_pattern else None
+
+    file_stats = FileStats(rootdir,
+                           require_size=require_size,
+                           require_perm=require_perm,
+                           require_type=require_type,
+                           require_nlink=require_nlink,
+                           require_uid=require_uid,
+                           require_gid=require_gid,
+                           require_ctime=require_ctime,
+                           require_mtime=require_mtime,
+                           require_btime=require_btime,
+                           require_ext=require_ext,
+                           require_nfile=require_nfile,
+                           require_nline=require_nline,
+                           exclude_dirs=exclude_dirs,
+                           exclude_files=exclude_files,
+                           exclude_exts=exclude_exts,
+                           exclude_pattern=exclude_pattern,
+                           use_name=args.name,
+                           verbose=args.verbose,
+                           jobs=jobs,
+                           ignore_hidden_file=args.ignore_hidden_file)
+
+    if args.json:
+        if not args.output:
+            print(json.dumps(file_stats.data, ensure_ascii=True, indent=4))
+        else:
+            with open(args.output, 'w+') as file:
+                json.dump(file_stats.data, file, ensure_ascii=True, indent=4)
+    elif args.csv:
+        if not args.output:
+            for idx, (stats_type, stats_data) in enumerate(file_stats.data.items()):
+                # blank line
+                if idx >= 1:
+                    print()
+
+                print(','.join(file_stats.header(stats_type)))
+                if stats_type == FileInfo.NUM_FILE.value:
+                    flatten_list = GenericUtil.flatten_nfile_dict(stats_data)
+                else:
+                    flatten_list = GenericUtil.flatten_dict(stats_data)
+                for entry_list in flatten_list:
+                    print(','.join(map(str, entry_list)))
+        else:
+            csv_file_name, csv_ext_name = os.path.splitext(args.output)
+            if not csv_ext_name:
+                csv_ext_name = '.csv'
+            only_one_entry = len(file_stats.data) == 1
+            for stats_type, stats_data in file_stats.data.items():
+                if only_one_entry:
+                    filename = f'{csv_file_name}{csv_ext_name}'
+                else:
+                    filename = f'{csv_file_name}-{stats_type}{csv_ext_name}'
+                FileUtil.to_csv(filename=filename,
+                                header=file_stats.header(stats_type),
+                                data=GenericUtil.flatten_dict(stats_data))
+    else:
+        output_results = []
+        if not args.quiet:
+            # elapsed time
+            output_results.append(f'{PROJECT_URL}  Time = {file_stats.time:.3f} s')
+        for stats_type in stats_type_set:
+            th = file_stats.header(stats_type=stats_type)
+            data = file_stats.data[stats_type]
+            if stats_type == FileInfo.SIZE.value:
+                base = BaseUnit.SI.value if args.si else BaseUnit.IEC.value
+                if args.size_range:
+                    data = count_size_range(data, base=base, human_readable=args.human_readable)
+                elif args.human_readable or args.si:
+                    new_data_dict = {}
+                    for size, num in data.items():
+                        exp, unit = FileUtil.get_suitable_exp_and_unit(size, base)
+                        new_data_dict[f'{size / (base ** exp):.3f} {unit}'] = num
+                    data = new_data_dict
+
+            if stats_type == FileInfo.NUM_FILE.value:
+                res = GenericUtil.flatten_nfile_dict(data)
+            else:
+                res = GenericUtil.flatten_dict(data)
+            nested_list = sorted(res,
+                                 key=cmp_to_key(compare_entry))
+
+            columns = [[header] for header in th]
+            for line in nested_list:
+                for col, entry in enumerate(line):
+                    columns[col].append(entry)
+            column_widths = [get_max_width(col) + 3 for col in columns]
+
+            line_length = sum(column_widths) + len(th) - 1
+            terminal_width = shutil.get_terminal_size().columns
+            separator_line = SEPARATOR * min(line_length, terminal_width)
+
+            # Tabular header
+            output_results.append(separator_line)
+            format_string = ''
+            for i in range(len(th)):
+                if i == 0:
+                    format_string += f'{{:<{column_widths[i]}}}'
+                else:
+                    format_string += f' {{:>{column_widths[i]}}}'
+
+            output_results.append(format_string.format(*th))
+
+            # Tabular data
+            output_results.append(separator_line)
+            for items in nested_list:
+                line = ''
+                for idx, item in enumerate(items):
+                    if idx == 0:
+                        line += f'{item:<{column_widths[idx]}} '
+                    else:
+                        line += f'{item:>{column_widths[idx]}} '
+                output_results.append(line)
+            output_results.append(separator_line)
+
+            # Statistics: Max, Min, Avg, Total, ...
+            if stats_type == FileInfo.SIZE.value:
+                output_results.extend(get_size_stats(file_stats.data[FileInfo.SIZE.value], args))
+
+        out = '\n'.join(output_results)
+
+        # Output
+        if not args.output:
+            print(out)
+        else:
+            with open(args.output, 'w+') as file:
+                file.write(f'{out}\n')
+
+    if args.plot_type:
+        if args.plot_name:
+            filename, ext = os.path.splitext(args.plot_name)
+            if not ext:
+                ext = '.pdf'
+        else:
+            filename, ext = '', ''
+
+        suffix = 0
+        for stats_type in stats_type_set:
+            if stats_type == FileInfo.NUM_FILE:
+                continue
+
+            name = f'{filename}_{suffix}{ext}' if args.plot_name else None
+            PlotUtil.plot(GenericUtil.flatten_dict(file_stats.data[stats_type]),
+                          name,
+                          args.plot_type)
+            suffix += 1
+
+
+if __name__ == "__main__":
+    main()
