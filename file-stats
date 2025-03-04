@@ -836,6 +836,11 @@ def main():
         elif stats_type == FileInfo.NUM_LINE.value:
             require_nline = True
 
+    if (require_uid or require_gid) and args.name:
+        if sys.platform not in {Platform.MACOS.value, Platform.LINUX.value}:
+            GenericUtil.print_error(f'Error: -n/--name option does not support {sys.platform}.')
+            exit(1)
+
     jobs = args.jobs if args.jobs else 1
 
     # exclude dirs, files, and extensions
