@@ -64,6 +64,7 @@ class FileInfo(Enum):
     EXTENSION = 'ext'
     NUM_FILE = 'nfile'
     NUM_LINE = 'nline'
+    NUM_HIDDEN_FILE = 'nhidden'
 
 
 class FileType(Enum):
@@ -161,14 +162,15 @@ class FileUtil(object):
             csv_writer.writerows(data)
 
     @staticmethod
-    def is_hidden_file(filename) -> bool:
-        if not filename:
+    def is_hidden_file(pathname) -> bool:
+        if not pathname:
             return False
 
         if sys.platform == Platform.WINDOWS.value:
-            stat_result = os.lstat(filename)
+            stat_result = os.lstat(pathname)
             return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
 
+        filename = os.path.split(pathname)[1]
         return filename[0] == '.'
 
     @staticmethod
@@ -291,6 +293,7 @@ class FileStats(object):
                  require_ext: bool = False,
                  require_nfile: bool = False,
                  require_nline: bool = False,
+                 require_nhidden: bool = False,
                  exclude_dirs: List[str] = None,
                  exclude_files: List[str] = None,
                  exclude_exts: List[str] = None,
@@ -313,6 +316,7 @@ class FileStats(object):
         self._require_ext = require_ext
         self._require_nfile = require_nfile
         self._require_nline = require_nline
+        self._require_nhidden = require_nhidden
 
         self._exclude_dirs = exclude_dirs
         self._exclude_files = exclude_files
@@ -361,7 +365,7 @@ class FileStats(object):
             if self._verbose:
                 print(f'{file_type}: {pathname}')
 
-            if self._ignore_hidden_file and FileUtil.is_hidden_file(filename):
+            if self._ignore_hidden_file and FileUtil.is_hidden_file(pathname):
                 continue
 
             if self._exclude_dirs and is_dir and filename in self._exclude_dirs:
@@ -456,6 +460,11 @@ class FileStats(object):
                     self._data_dict[FileInfo.NUM_LINE.value].setdefault(pathname, {})
                     self._data_dict[FileInfo.NUM_LINE.value][pathname] = FileUtil.calculate_file_lines(pathname)
 
+            if self._require_nhidden:
+                if FileUtil.is_hidden_file(pathname):
+                    self._data_dict[FileInfo.NUM_HIDDEN_FILE.value].setdefault(dirname, 0)
+                    self._data_dict[FileInfo.NUM_HIDDEN_FILE.value][dirname] += 1
+
             if is_dir and recursive:
                 self._count(pathname)
             else:
@@ -499,10 +508,13 @@ class FileStats(object):
             return ['Extension', 'Number of Files']
 
         if stats_type == FileInfo.NUM_FILE.value:
-            return ['Dir'] + [ft.value for ft in FileType]
+            return ['Dir Name'] + [ft.value for ft in FileType]
 
-        assert stats_type == FileInfo.NUM_LINE.value
-        return ['File Name', 'Number of Lines']
+        if stats_type == FileInfo.NUM_LINE.value:
+            return ['File Name', 'Number of Lines']
+
+        assert stats_type == FileInfo.NUM_HIDDEN_FILE.value
+        return ['Dir Name', 'Number of Hidden Files']
 
 
 def parse_args():
@@ -809,7 +821,8 @@ def main():
     require_size = require_perm = require_type \
         = require_nlink = require_uid = require_gid \
         = require_ctime = require_mtime = require_btime \
-        = require_ext = require_nfile = require_nline = False
+        = require_ext = require_nfile = require_nline \
+        = require_nhidden = False
     for stats_type in stats_type_set:
         if stats_type == FileInfo.SIZE.value:
             require_size = True
@@ -835,6 +848,8 @@ def main():
             require_nfile = True
         elif stats_type == FileInfo.NUM_LINE.value:
             require_nline = True
+        elif stats_type == FileInfo.NUM_HIDDEN_FILE.value:
+            require_nhidden = True
 
     if (require_uid or require_gid) and args.name:
         if sys.platform not in {Platform.MACOS.value, Platform.LINUX.value}:
@@ -862,6 +877,7 @@ def main():
                            require_ext=require_ext,
                            require_nfile=require_nfile,
                            require_nline=require_nline,
+                           require_nhidden=require_nhidden,
                            exclude_dirs=exclude_dirs,
                            exclude_files=exclude_files,
                            exclude_exts=exclude_exts,
@@ -912,6 +928,9 @@ def main():
         for stats_type in stats_type_set:
             th = file_stats.header(stats_type=stats_type)
             data = file_stats.data[stats_type]
+            if not data:
+                continue
+
             if stats_type == FileInfo.SIZE.value:
                 base = BaseUnit.SI.value if args.si else BaseUnit.IEC.value
                 if args.size_range:
