@@ -298,11 +298,12 @@ class FileStats(object):
                  exclude_files: List[str] = None,
                  exclude_exts: List[str] = None,
                  exclude_pattern: str = None,
+                 per_file: bool = False,
                  use_name: bool = False,
                  verbose: bool = False,
                  ignore_hidden_file: bool = False,
                  jobs: int = 1):
-        self.rootdir = rootdir
+        self._rootdir = rootdir
 
         self._require_type = require_type
         self._require_perm = require_perm
@@ -323,6 +324,7 @@ class FileStats(object):
         self._exclude_exts = exclude_exts
         self._exclude_patten = exclude_pattern
 
+        self._per_file = per_file
         self._use_name = use_name
         self._verbose = verbose
         self._ignore_hidden_file = ignore_hidden_file
@@ -331,7 +333,7 @@ class FileStats(object):
         self._data_dict = defaultdict(dict)
 
         self._start_time = time()
-        self._count(self.rootdir)
+        self._count(self._rootdir)
         self._end_time = time()
 
     @property
@@ -398,8 +400,11 @@ class FileStats(object):
 
             if self._require_size and not is_dir:
                 size = file_stat.st_size
-                self._data_dict[FileInfo.SIZE.value].setdefault(size, 0)
-                self._data_dict[FileInfo.SIZE.value][size] += 1
+                if self._per_file:
+                    self._data_dict[FileInfo.SIZE.value][pathname] = size
+                else:
+                    self._data_dict[FileInfo.SIZE.value].setdefault(size, 0)
+                    self._data_dict[FileInfo.SIZE.value][size] += 1
 
             if self._require_nlink:
                 nlink = file_stat.st_nlink
@@ -474,6 +479,8 @@ class FileStats(object):
 
     def header(self, stats_type: str):
         if stats_type == FileInfo.SIZE.value:
+            if self._per_file:
+                return ['File Name', 'File Size']
             return ['File Size', 'Number of Files']
 
         if stats_type == FileInfo.TYPE.value:
@@ -602,6 +609,9 @@ def parse_args():
     parser.add_argument('--size-range',
                         action='store_true',
                         help='Show size range')
+    parser.add_argument('--per-file',
+                        action='store_true',
+                        help='Show the size of each file')
 
     # uid/gid options
     parser.add_argument('-n',
@@ -882,6 +892,7 @@ def main():
                            exclude_files=exclude_files,
                            exclude_exts=exclude_exts,
                            exclude_pattern=exclude_pattern,
+                           per_file=args.per_file,
                            use_name=args.name,
                            verbose=args.verbose,
                            jobs=jobs,
@@ -931,7 +942,7 @@ def main():
             if not data:
                 continue
 
-            if stats_type == FileInfo.SIZE.value:
+            if stats_type == FileInfo.SIZE.value and not args.per_file:
                 base = BaseUnit.SI.value if args.si else BaseUnit.IEC.value
                 if args.size_range:
                     data = count_size_range(data, base=base, human_readable=args.human_readable)
@@ -983,7 +994,7 @@ def main():
             output_results.append(separator_line)
 
             # Statistics: Max, Min, Avg, Total, ...
-            if stats_type == FileInfo.SIZE.value:
+            if stats_type == FileInfo.SIZE.value and not args.per_file:
                 output_results.extend(get_size_stats(file_stats.data[FileInfo.SIZE.value], args))
 
         out = '\n'.join(output_results)

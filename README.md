@@ -5,11 +5,11 @@
 ```shell
 $ ./file-stats -h
 usage: file-stats [-h] -r ROOTDIR
-                  [-s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline} ...]]
+                  [-s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} ...]]
                   [-j [JOBS]] [-i] [-v] [-q] [--exclude-dirs EXCLUDE_DIRS] [--exclude-files EXCLUDE_FILES]
                   [--exclude-exts EXCLUDE_EXTS] [--exclude-pattern EXCLUDE_PATTERN]
-                  [-H | -k | -m | -g | -t | -p | --si] [--size-range] [-n] [-f] [-o OUTPUT] [-J | -C]
-                  [--plot-type {bar,pie,cdf}] [--plot-name PLOT_NAME]
+                  [-H | -k | -m | -g | -t | -p | --si] [--size-range] [--per-file] [-n] [-f] [-o OUTPUT]
+                  [-J | -C] [--plot-type {bar,pie,cdf}] [--plot-name PLOT_NAME]
 
 file-stats - Command-line based File Statistics Tool
 
@@ -17,7 +17,7 @@ options:
   -h, --help            show this help message and exit
   -r ROOTDIR, --rootdir ROOTDIR
                         Root directory
-  -s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline} ...], --stats {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline} ...]
+  -s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} ...], --stats {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} ...]
                         Stats type
   -j [JOBS], --jobs [JOBS]
                         Specify the number of jobs to run simultaneously
@@ -42,6 +42,7 @@ options:
   -p, --pi              Use PiB
   --si                  Use international system of units (SI)
   --size-range          Show size range
+  --per-file            Show the size of each file
   -n, --name            Show user name or group name
   -f, --full-path       Print the full path for each file
   -o OUTPUT, --output OUTPUT
