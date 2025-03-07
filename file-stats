@@ -174,26 +174,40 @@ class FileUtil(object):
         return filename[0] == '.'
 
     @staticmethod
-    def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, str]:
+    def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, SizeUnit]:
         assert size >= 0
 
         std_sizes = [base, base ** 2, base ** 3, base ** 4, base ** 5]
         if 0 <= size < std_sizes[0]:
-            return 0, SizeUnit.B.value
+            return 0, SizeUnit.B
         if std_sizes[0] <= size < std_sizes[1]:
-            return 1, SizeUnit.KIB.value if base == BaseUnit.IEC.value else SizeUnit.KB.value
+            return 1, SizeUnit.KIB if base == BaseUnit.IEC.value else SizeUnit.KB
         if std_sizes[1] <= size < std_sizes[2]:
-            return 2, SizeUnit.MIB.value if base == BaseUnit.IEC.value else SizeUnit.MB.value
+            return 2, SizeUnit.MIB if base == BaseUnit.IEC.value else SizeUnit.MB
         if std_sizes[2] <= size < std_sizes[3]:
-            return 3, SizeUnit.GIB.value if base == BaseUnit.IEC.value else SizeUnit.GB.value
+            return 3, SizeUnit.GIB if base == BaseUnit.IEC.value else SizeUnit.GB
         if std_sizes[3] <= size < std_sizes[4]:
-            return 4, SizeUnit.TIB.value if base == BaseUnit.IEC.value else SizeUnit.TB.value
-        return 5, SizeUnit.PIB.value if base == BaseUnit.IEC.value else SizeUnit.PB.value
+            return 4, SizeUnit.TIB if base == BaseUnit.IEC.value else SizeUnit.TB
+        return 5, SizeUnit.PIB if base == BaseUnit.IEC.value else SizeUnit.PB
 
     @staticmethod
     def get_suitable_size(size: float, base: int) -> str:
         exp, unit = FileUtil.get_suitable_exp_and_unit(size, base)
-        return f'{size / (base ** exp)} {unit}'
+        return f'{size / (base ** exp)} {unit.value}'
+
+    @staticmethod
+    def get_size_exp(unit: SizeUnit):
+        if unit == SizeUnit.B:
+            return 0
+        if unit == SizeUnit.KIB or unit == SizeUnit.KB:
+            return 1
+        if unit == SizeUnit.MIB or unit == SizeUnit.MB:
+            return 2
+        if unit == SizeUnit.GIB or unit == SizeUnit.GB:
+            return 3
+        if unit == SizeUnit.TIB or unit == SizeUnit.TB:
+            return 4
+        return 5
 
 
 class GenericUtil(object):
@@ -745,20 +759,17 @@ def get_size_stats(stats_data, args):
     base = BaseUnit.IEC.value
     if args.ki or args.mi or args.gi or args.ti or args.pi:
         if args.ki:
-            unit = SizeUnit.KIB.value
-            exp = 1
+            unit = SizeUnit.KIB
         elif args.mi:
-            unit = SizeUnit.MIB.value
-            exp = 2
+            unit = SizeUnit.MIB
         elif args.gi:
-            unit = SizeUnit.GIB.value
-            exp = 3
+            unit = SizeUnit.GIB
         elif args.ti:
-            unit = SizeUnit.TIB.value
-            exp = 4
+            unit = SizeUnit.TIB
         else:
-            unit = SizeUnit.PIB.value
-            exp = 5
+            unit = SizeUnit.PIB
+
+        exp = FileUtil.get_size_exp(unit)
 
         min_exp = max_exp = avg_exp = \
             median_exp = p90_exp = p95_exp = p99_exp = \
@@ -785,7 +796,7 @@ def get_size_stats(stats_data, args):
             total_exp = 0
         min_unit = max_unit = avg_unit = \
             median_unit = p90_unit = p95_unit = p99_unit = \
-            total_unit = SizeUnit.B.value
+            total_unit = SizeUnit.B
         precision = '.0f'
 
     min_size = f'{min_size / (base ** min_exp):{precision}}'
@@ -797,14 +808,14 @@ def get_size_stats(stats_data, args):
     p99_size = f'{p99_size / (base ** p99_exp):{precision}}'
     total_size = f'{total_size / (base ** total_exp):{precision}}'
 
-    out_list.append(f'Min: {min_size} {min_unit}, '
-                    f'Max: {max_size} {max_unit}')
-    out_list.append(f'Avg: {avg_size} {avg_unit}, '
-                    f'Median: {median_size} {median_unit}')
-    out_list.append(f'P90: {p90_size} {p90_unit}, '
-                    f'P95: {p95_size} {p95_unit}, '
-                    f'P99: {p99_size} {p99_unit}')
-    out_list.append(f'Total Size: {total_size} {total_unit}, '
+    out_list.append(f'Min: {min_size} {min_unit.value}, '
+                    f'Max: {max_size} {max_unit.value}')
+    out_list.append(f'Avg: {avg_size} {avg_unit.value}, '
+                    f'Median: {median_size} {median_unit.value}')
+    out_list.append(f'P90: {p90_size} {p90_unit.value}, '
+                    f'P95: {p95_size} {p95_unit.value}, '
+                    f'P99: {p99_size} {p99_unit.value}')
+    out_list.append(f'Total Size: {total_size} {total_unit.value}, '
                     f'Number of Files: {total_file}')
     return out_list
 
@@ -942,15 +953,42 @@ def main():
             if not data:
                 continue
 
-            if stats_type == FileInfo.SIZE.value and not args.per_file:
+            if stats_type == FileInfo.SIZE.value:
                 base = BaseUnit.SI.value if args.si else BaseUnit.IEC.value
-                if args.size_range:
+                if args.size_range and not args.per_file:
                     data = count_size_range(data, base=base, human_readable=args.human_readable)
                 elif args.human_readable or args.si:
                     new_data_dict = {}
-                    for size, num in data.items():
-                        exp, unit = FileUtil.get_suitable_exp_and_unit(size, base)
-                        new_data_dict[f'{size / (base ** exp):.3f} {unit}'] = num
+                    if args.per_file:
+                        for pathname, size in data.items():
+                            exp, unit = FileUtil.get_suitable_exp_and_unit(size, base)
+                            new_data_dict[pathname] = f'{size / (base ** exp):.3f} {unit.value}'
+                    else:
+                        for size, num in data.items():
+                            exp, unit = FileUtil.get_suitable_exp_and_unit(size, base)
+                            new_data_dict[f'{size / (base ** exp):.3f} {unit.value}'] = num
+                    data = new_data_dict
+                elif args.ki or args.mi or args.gi or args.ti or args.pi:
+                    if args.ki:
+                        unit = SizeUnit.KIB
+                    elif args.mi:
+                        unit = SizeUnit.MIB
+                    elif args.gi:
+                        unit = SizeUnit.GIB
+                    elif args.ti:
+                        unit = SizeUnit.TIB
+                    else:
+                        unit = SizeUnit.PIB
+
+                    exp = FileUtil.get_size_exp(unit)
+
+                    new_data_dict = {}
+                    if args.per_file:
+                        for pathname, size in data.items():
+                            new_data_dict[pathname] = f'{size / (base ** exp):.3f} {unit.value}'
+                    else:
+                        for size, num in data.items():
+                            new_data_dict[f'{size / (base ** exp):.3f} {unit.value}'] = num
                     data = new_data_dict
 
             if stats_type == FileInfo.NUM_FILE.value:
