@@ -65,6 +65,7 @@ class FileInfo(Enum):
     NUM_FILE = 'nfile'
     NUM_LINE = 'nline'
     NUM_HIDDEN_FILE = 'nhidden'
+    NUM_BLOCK = 'nblock'
 
 
 class FileType(Enum):
@@ -316,6 +317,7 @@ class FileStats(object):
                  require_nfile: bool = False,
                  require_nline: bool = False,
                  require_nhidden: bool = False,
+                 require_nblock: bool = False,
                  exclude_dirs: List[str] = None,
                  exclude_files: List[str] = None,
                  exclude_exts: List[str] = None,
@@ -340,6 +342,7 @@ class FileStats(object):
         self._require_nfile = require_nfile
         self._require_nline = require_nline
         self._require_nhidden = require_nhidden
+        self._require_nblock = require_nblock
 
         self._exclude_dirs = exclude_dirs
         self._exclude_files = exclude_files
@@ -482,15 +485,16 @@ class FileStats(object):
                     self._data_dict[FileInfo.NUM_FILE.value][dirname].setdefault(ft.value, 0)
                 self._data_dict[FileInfo.NUM_FILE.value][dirname][file_type] += 1
 
-            if self._require_nline:
-                if file_type == FileType.FILE.value:
-                    self._data_dict[FileInfo.NUM_LINE.value].setdefault(pathname, {})
-                    self._data_dict[FileInfo.NUM_LINE.value][pathname] = FileUtil.calculate_file_lines(pathname)
+            if self._require_nline and file_type == FileType.FILE.value:
+                self._data_dict[FileInfo.NUM_LINE.value].setdefault(pathname, {})
+                self._data_dict[FileInfo.NUM_LINE.value][pathname] = FileUtil.calculate_file_lines(pathname)
 
-            if self._require_nhidden:
-                if FileUtil.is_hidden_file(pathname):
-                    self._data_dict[FileInfo.NUM_HIDDEN_FILE.value].setdefault(dirname, 0)
-                    self._data_dict[FileInfo.NUM_HIDDEN_FILE.value][dirname] += 1
+            if self._require_nhidden and FileUtil.is_hidden_file(pathname):
+                self._data_dict[FileInfo.NUM_HIDDEN_FILE.value].setdefault(dirname, 0)
+                self._data_dict[FileInfo.NUM_HIDDEN_FILE.value][dirname] += 1
+
+            if self._require_nblock:
+                self._data_dict[FileInfo.NUM_BLOCK.value][pathname] = file_stat.st_blocks
 
             if is_dir and recursive:
                 self._count(pathname)
@@ -542,8 +546,11 @@ class FileStats(object):
         if stats_type == FileInfo.NUM_LINE.value:
             return ['File Name', 'Number of Lines']
 
-        assert stats_type == FileInfo.NUM_HIDDEN_FILE.value
-        return ['Dir Name', 'Number of Hidden Files']
+        if stats_type == FileInfo.NUM_HIDDEN_FILE.value:
+            return ['Dir Name', 'Number of Hidden Files']
+
+        assert stats_type == FileInfo.NUM_BLOCK.value
+        return ['Pathname', 'Number of Blocks']
 
 
 def parse_args():
@@ -805,7 +812,7 @@ def main():
         = require_nlink = require_uid = require_gid \
         = require_ctime = require_mtime = require_btime \
         = require_ext = require_nfile = require_nline \
-        = require_nhidden = False
+        = require_nhidden = require_nblock = False
     for stats_type in stats_type_set:
         if stats_type == FileInfo.SIZE.value:
             require_size = True
@@ -833,6 +840,8 @@ def main():
             require_nline = True
         elif stats_type == FileInfo.NUM_HIDDEN_FILE.value:
             require_nhidden = True
+        elif stats_type == FileInfo.NUM_BLOCK.value:
+            require_nblock = True
 
     if (require_uid or require_gid) and args.name:
         if sys.platform not in {Platform.MACOS.value, Platform.LINUX.value}:
@@ -861,6 +870,7 @@ def main():
                            require_nfile=require_nfile,
                            require_nline=require_nline,
                            require_nhidden=require_nhidden,
+                           require_nblock=require_nblock,
                            exclude_dirs=exclude_dirs,
                            exclude_files=exclude_files,
                            exclude_exts=exclude_exts,

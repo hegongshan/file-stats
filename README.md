@@ -5,7 +5,7 @@
 ```shell
 $ ./file-stats -h
 usage: file-stats [-h] -r ROOTDIR
-                  [-s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} ...]]
+                  [-s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} ...]]
                   [-j [JOBS]] [-i] [-v] [-q] [--exclude-dirs EXCLUDE_DIRS] [--exclude-files EXCLUDE_FILES]
                   [--exclude-exts EXCLUDE_EXTS] [--exclude-pattern EXCLUDE_PATTERN]
                   [-H | -k | -m | -g | -t | -p | --si] [--size-range] [--per-file] [-n] [-f] [-o OUTPUT]
@@ -17,7 +17,7 @@ options:
   -h, --help            show this help message and exit
   -r ROOTDIR, --rootdir ROOTDIR
                         Root directory
-  -s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} ...], --stats {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden} ...]
+  -s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} ...], --stats {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} ...]
                         Stats type
   -j [JOBS], --jobs [JOBS]
                         Specify the number of jobs to run simultaneously
