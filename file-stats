@@ -26,7 +26,7 @@ import stat
 from datetime import datetime
 from enum import Enum
 from time import time
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Set
 from collections import defaultdict
 from functools import cmp_to_key
 
@@ -304,20 +304,7 @@ class FileStats(object):
 
     def __init__(self,
                  rootdir: str,
-                 require_type: bool = True,
-                 require_size: bool = False,
-                 require_perm: bool = False,
-                 require_nlink: bool = False,
-                 require_uid: bool = False,
-                 require_gid: bool = False,
-                 require_ctime: bool = False,
-                 require_mtime: bool = False,
-                 require_btime: bool = False,
-                 require_ext: bool = False,
-                 require_nfile: bool = False,
-                 require_nline: bool = False,
-                 require_nhidden: bool = False,
-                 require_nblock: bool = False,
+                 stats_type_set: Set[str] = None,
                  exclude_dirs: List[str] = None,
                  exclude_files: List[str] = None,
                  exclude_exts: List[str] = None,
@@ -329,20 +316,7 @@ class FileStats(object):
                  jobs: int = 1):
         self._rootdir = rootdir
 
-        self._require_type = require_type
-        self._require_perm = require_perm
-        self._require_size = require_size
-        self._require_nlink = require_nlink
-        self._require_uid = require_uid
-        self._require_gid = require_gid
-        self._require_ctime = require_ctime
-        self._require_mtime = require_mtime
-        self._require_btime = require_btime
-        self._require_ext = require_ext
-        self._require_nfile = require_nfile
-        self._require_nline = require_nline
-        self._require_nhidden = require_nhidden
-        self._require_nblock = require_nblock
+        self._stats_set = stats_type_set
 
         self._exclude_dirs = exclude_dirs
         self._exclude_files = exclude_files
@@ -413,17 +387,17 @@ class FileStats(object):
             if self._exclude_patten and fnmatch.fnmatch(filename, self._exclude_patten):
                 continue
 
-            if self._require_type:
+            if FileInfo.TYPE.value in self._stats_set:
                 self._data_dict[FileInfo.TYPE.value].setdefault(file_type, 0)
                 self._data_dict[FileInfo.TYPE.value][file_type] += 1
 
-            if self._require_perm:
+            if FileInfo.PERM.value in self._stats_set:
                 perm = oct(file_stat.st_mode)[-3:]
                 self._data_dict[FileInfo.PERM.value].setdefault(file_type, {})
                 self._data_dict[FileInfo.PERM.value][file_type].setdefault(perm, 0)
                 self._data_dict[FileInfo.PERM.value][file_type][perm] += 1
 
-            if self._require_size and not is_dir:
+            if FileInfo.SIZE.value in self._stats_set and not is_dir:
                 size = file_stat.st_size
                 if self._per_file:
                     self._data_dict[FileInfo.SIZE.value][pathname] = size
@@ -431,12 +405,12 @@ class FileStats(object):
                     self._data_dict[FileInfo.SIZE.value].setdefault(size, 0)
                     self._data_dict[FileInfo.SIZE.value][size] += 1
 
-            if self._require_nlink:
+            if FileInfo.NUM_LINK.value in self._stats_set:
                 nlink = file_stat.st_nlink
                 self._data_dict[FileInfo.NUM_LINK.value][file_type].setdefault(nlink, 0)
                 self._data_dict[FileInfo.NUM_LINK.value][file_type][nlink] += 1
 
-            if self._require_uid:
+            if FileInfo.UID.value in self._stats_set:
                 uid = file_stat.st_uid
                 if self._use_name:
                     import pwd
@@ -445,7 +419,7 @@ class FileStats(object):
                 self._data_dict[FileInfo.UID.value].setdefault(uid, 0)
                 self._data_dict[FileInfo.UID.value][uid] += 1
 
-            if self._require_gid:
+            if FileInfo.GID.value in self._stats_set:
                 gid = file_stat.st_gid
                 if self._use_name:
                     import grp
@@ -454,46 +428,48 @@ class FileStats(object):
                 self._data_dict[FileInfo.GID.value].setdefault(gid, 0)
                 self._data_dict[FileInfo.GID.value][gid] += 1
 
-            if self._require_ctime:
+            if FileInfo.CHANGE_TIME.value in self._stats_set:
                 ctime = file_stat.st_ctime
                 date = datetime.fromtimestamp(ctime).strftime('%Y-%m-%d')
                 self._data_dict[FileInfo.CHANGE_TIME.value].setdefault(date, 0)
                 self._data_dict[FileInfo.CHANGE_TIME.value][date] += 1
 
-            if self._require_mtime:
+            if FileInfo.MODIFICATION_TIME.value in self._stats_set:
                 mtime = file_stat.st_mtime
                 date = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
                 self._data_dict[FileInfo.MODIFICATION_TIME.value].setdefault(date, 0)
                 self._data_dict[FileInfo.MODIFICATION_TIME.value][date] += 1
 
-            if self._require_btime:
+            if FileInfo.BIRTH_TIME.value in self._stats_set:
                 btime = file_stat.st_birthtime
                 date = datetime.fromtimestamp(btime).strftime('%Y-%m-%d')
                 self._data_dict[FileInfo.BIRTH_TIME.value].setdefault(date, 0)
                 self._data_dict[FileInfo.BIRTH_TIME.value][date] += 1
 
-            if self._require_ext:
+            if FileInfo.EXTENSION.value in self._stats_set:
                 if file_type == FileType.FILE.value:
                     ext = os.path.splitext(filename)[1]
                     ext = ext if ext else 'unknown'
                     self._data_dict[FileInfo.EXTENSION.value].setdefault(ext, 0)
                     self._data_dict[FileInfo.EXTENSION.value][ext] += 1
 
-            if self._require_nfile:
+            if FileInfo.NUM_FILE.value in self._stats_set:
                 self._data_dict[FileInfo.NUM_FILE.value].setdefault(dirname, {})
                 for ft in FileType:
                     self._data_dict[FileInfo.NUM_FILE.value][dirname].setdefault(ft.value, 0)
                 self._data_dict[FileInfo.NUM_FILE.value][dirname][file_type] += 1
 
-            if self._require_nline and file_type == FileType.FILE.value:
+            if (FileInfo.NUM_LINE.value in self._stats_set
+                    and file_type == FileType.FILE.value):
                 self._data_dict[FileInfo.NUM_LINE.value].setdefault(pathname, {})
                 self._data_dict[FileInfo.NUM_LINE.value][pathname] = FileUtil.calculate_file_lines(pathname)
 
-            if self._require_nhidden and FileUtil.is_hidden_file(pathname):
+            if (FileInfo.NUM_HIDDEN_FILE.value in self._stats_set
+                    and FileUtil.is_hidden_file(pathname)):
                 self._data_dict[FileInfo.NUM_HIDDEN_FILE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.NUM_HIDDEN_FILE.value][dirname] += 1
 
-            if self._require_nblock:
+            if FileInfo.NUM_BLOCK.value in self._stats_set:
                 self._data_dict[FileInfo.NUM_BLOCK.value][pathname] = file_stat.st_blocks
 
             if is_dir and recursive:
@@ -808,42 +784,7 @@ def main():
     else:
         stats_type_set = {args.stats}
 
-    require_size = require_perm = require_type \
-        = require_nlink = require_uid = require_gid \
-        = require_ctime = require_mtime = require_btime \
-        = require_ext = require_nfile = require_nline \
-        = require_nhidden = require_nblock = False
-    for stats_type in stats_type_set:
-        if stats_type == FileInfo.SIZE.value:
-            require_size = True
-        elif stats_type == FileInfo.PERM.value:
-            require_perm = True
-        elif stats_type == FileInfo.TYPE.value:
-            require_type = True
-        elif stats_type == FileInfo.NUM_LINK.value:
-            require_nlink = True
-        elif stats_type == FileInfo.UID.value:
-            require_uid = True
-        elif stats_type == FileInfo.GID.value:
-            require_gid = True
-        elif stats_type == FileInfo.CHANGE_TIME.value:
-            require_ctime = True
-        elif stats_type == FileInfo.MODIFICATION_TIME.value:
-            require_mtime = True
-        elif stats_type == FileInfo.BIRTH_TIME.value:
-            require_btime = True
-        elif stats_type == FileInfo.EXTENSION.value:
-            require_ext = True
-        elif stats_type == FileInfo.NUM_FILE.value:
-            require_nfile = True
-        elif stats_type == FileInfo.NUM_LINE.value:
-            require_nline = True
-        elif stats_type == FileInfo.NUM_HIDDEN_FILE.value:
-            require_nhidden = True
-        elif stats_type == FileInfo.NUM_BLOCK.value:
-            require_nblock = True
-
-    if (require_uid or require_gid) and args.name:
+    if args.name and (FileInfo.UID.value or FileInfo.GID.value) in stats_type_set:
         if sys.platform not in {Platform.MACOS.value, Platform.LINUX.value}:
             GenericUtil.print_error(f'Error: -n/--name option does not support {sys.platform}.')
             exit(1)
@@ -857,20 +798,7 @@ def main():
     exclude_pattern = args.exclude_pattern if args.exclude_pattern else None
 
     file_stats = FileStats(rootdir,
-                           require_size=require_size,
-                           require_perm=require_perm,
-                           require_type=require_type,
-                           require_nlink=require_nlink,
-                           require_uid=require_uid,
-                           require_gid=require_gid,
-                           require_ctime=require_ctime,
-                           require_mtime=require_mtime,
-                           require_btime=require_btime,
-                           require_ext=require_ext,
-                           require_nfile=require_nfile,
-                           require_nline=require_nline,
-                           require_nhidden=require_nhidden,
-                           require_nblock=require_nblock,
+                           stats_type_set=stats_type_set,
                            exclude_dirs=exclude_dirs,
                            exclude_files=exclude_files,
                            exclude_exts=exclude_exts,
