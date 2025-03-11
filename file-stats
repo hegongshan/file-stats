@@ -174,7 +174,13 @@ class FileUtil(object):
             stat_result = os.lstat(pathname)
             return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
 
-        filename = os.path.split(pathname)[1]
+        if sys.platform == Platform.MACOS.value:
+            stat_result = os.lstat(pathname)
+            if bool(stat_result.st_flags & stat.UF_HIDDEN):
+                return True
+
+        # Linux + macOS
+        filename = os.path.basename(pathname)
         return filename[0] == '.'
 
     @staticmethod
@@ -304,7 +310,7 @@ class FileStats(object):
 
     def __init__(self,
                  rootdir: str,
-                 stats_type_set: Set[str] = None,
+                 stats_type_set: Set[str],
                  exclude_dirs: List[str] = None,
                  exclude_files: List[str] = None,
                  exclude_exts: List[str] = None,
@@ -315,7 +321,6 @@ class FileStats(object):
                  ignore_hidden_file: bool = False,
                  jobs: int = 1):
         self._rootdir = rootdir
-
         self._stats_set = stats_type_set
 
         self._exclude_dirs = exclude_dirs
