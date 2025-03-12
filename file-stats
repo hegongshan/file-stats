@@ -794,6 +794,19 @@ def main():
             GenericUtil.print_error(f'Error: -n/--name option does not support {sys.platform}.')
             exit(1)
 
+    btime_disabled = (FileInfo.BIRTH_TIME.value in stats_type_set
+                      and not hasattr(os.stat_result, 'st_birthtime'))
+    nblock_disabled = (FileInfo.NUM_BLOCK.value in stats_type_set
+                       and not hasattr(os.stat_result, 'st_blocks'))
+    if btime_disabled or nblock_disabled:
+        if btime_disabled:
+            feature = FileInfo.BIRTH_TIME.value
+        else:
+            feature = FileInfo.NUM_BLOCK.value
+        GenericUtil.print_error(
+            f'Error: The operating system does not support this feature \'{feature}\'.')
+        exit(1)
+
     jobs = args.jobs if args.jobs else 1
 
     # exclude dirs, files, and extensions
