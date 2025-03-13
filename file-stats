@@ -76,6 +76,9 @@ class FileType(Enum):
     BLOCK = 'block'
     PIPE = 'pipe'
     SOCKET = 'socket'
+    DOOR = 'door'
+    PORT = 'port'
+    WHITEOUT = 'whiteout'
     UNKNOWN = 'unknown'
 
 
@@ -120,27 +123,36 @@ class PlotType(Enum):
 class FileUtil(object):
 
     @staticmethod
-    def get_file_type(file_stat):
-        if stat.S_ISDIR(file_stat.st_mode):
+    def get_file_type(mode):
+        if stat.S_ISDIR(mode):
             return FileType.DIR.value
 
-        if stat.S_ISREG(file_stat.st_mode):
+        if stat.S_ISREG(mode):
             return FileType.FILE.value
 
-        if stat.S_ISLNK(file_stat.st_mode):
+        if stat.S_ISLNK(mode):
             return FileType.SYMLINK.value
 
-        if stat.S_ISCHR(file_stat.st_mode):
+        if stat.S_ISCHR(mode):
             return FileType.CHARACTER.value
 
-        if stat.S_ISBLK(file_stat.st_mode):
+        if stat.S_ISBLK(mode):
             return FileType.BLOCK.value
 
-        if stat.S_ISSOCK(file_stat.st_mode):
+        if stat.S_ISSOCK(mode):
             return FileType.SOCKET.value
 
-        if stat.S_ISFIFO(file_stat.st_mode):
+        if stat.S_ISFIFO(mode):
             return FileType.PIPE.value
+
+        if hasattr(stat, 'S_ISDOOR') and stat.S_ISDOOR(mode):
+            return FileType.DOOR.value
+
+        if hasattr(stat, 'S_ISPORT') and stat.S_ISPORT(mode):
+            return FileType.PORT.value
+
+        if hasattr(stat, 'S_ISWHT') and stat.S_ISWHT(mode):
+            return FileType.WHITEOUT.value
 
         return FileType.UNKNOWN.value
 
@@ -365,7 +377,7 @@ class FileStats(object):
             pathname = os.path.join(dirname, filename)
 
             file_stat = os.lstat(pathname)
-            file_type = FileUtil.get_file_type(file_stat)
+            file_type = FileUtil.get_file_type(file_stat.st_mode)
             is_dir = file_type == FileType.DIR.value
 
             if self._verbose:
