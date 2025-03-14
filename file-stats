@@ -66,6 +66,7 @@ class FileInfo(Enum):
     NUM_LINE = 'nline'
     NUM_HIDDEN_FILE = 'nhidden'
     NUM_BLOCK = 'nblock'
+    ARCHIVE = 'archive'
 
 
 class FileType(Enum):
@@ -194,6 +195,24 @@ class FileUtil(object):
         # Linux + macOS
         filename = os.path.basename(pathname)
         return filename[0] == '.'
+
+    @staticmethod
+    def is_archive_file(pathname) -> bool:
+        if not pathname:
+            return False
+
+        if sys.platform == Platform.WINDOWS.value:
+            stat_result = os.lstat(pathname)
+            return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_ARCHIVE)
+
+        # Linux + macOS
+        filename = os.path.basename(pathname)
+        dot_index = filename.find('.')
+        if dot_index == -1:
+            return False
+
+        ext = filename[dot_index:].lower()
+        return ext == '.tar' or ext.startswith('.tar.')
 
     @staticmethod
     def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, SizeUnit]:
@@ -489,6 +508,11 @@ class FileStats(object):
             if FileInfo.NUM_BLOCK.value in self._stats_set:
                 self._data_dict[FileInfo.NUM_BLOCK.value][pathname] = file_stat.st_blocks
 
+            if (FileInfo.ARCHIVE.value in self._stats_set
+                    and FileUtil.is_archive_file(pathname)):
+                self._data_dict[FileInfo.ARCHIVE.value].setdefault(dirname, 0)
+                self._data_dict[FileInfo.ARCHIVE.value][dirname] += 1
+
             if is_dir and recursive:
                 self._count(pathname)
             else:
@@ -542,8 +566,11 @@ class FileStats(object):
         if stats_type == FileInfo.NUM_HIDDEN_FILE.value:
             return ['Dir Name', 'Number of Hidden Files']
 
-        assert stats_type == FileInfo.NUM_BLOCK.value
-        return ['Pathname', 'Number of Blocks']
+        if stats_type == FileInfo.NUM_BLOCK.value:
+            return ['Pathname', 'Number of Blocks']
+
+        assert stats_type == FileInfo.ARCHIVE.value
+        return ['Dir Name', 'Number of Archive Files']
 
 
 def parse_args():
