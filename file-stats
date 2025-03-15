@@ -67,6 +67,7 @@ class FileInfo(Enum):
     NUM_HIDDEN_FILE = 'nhidden'
     NUM_BLOCK = 'nblock'
     ARCHIVE = 'archive'
+    READONLY = 'readonly'
 
 
 class FileType(Enum):
@@ -180,7 +181,7 @@ class FileUtil(object):
 
     @staticmethod
     def is_hidden_file(pathname) -> bool:
-        if not pathname:
+        if not pathname or not os.path.exists(pathname):
             return False
 
         if sys.platform == Platform.WINDOWS.value:
@@ -198,7 +199,7 @@ class FileUtil(object):
 
     @staticmethod
     def is_archive_file(pathname) -> bool:
-        if not pathname:
+        if not pathname or not os.path.exists(pathname):
             return False
 
         if sys.platform == Platform.WINDOWS.value:
@@ -213,6 +214,20 @@ class FileUtil(object):
 
         ext = filename[dot_index:].lower()
         return ext == '.tar' or ext.startswith('.tar.')
+
+    @staticmethod
+    def is_readonly_file(pathname):
+        if not pathname or not os.path.exists(pathname):
+            return False
+
+        stat_result = os.lstat(pathname)
+        if sys.platform == Platform.WINDOWS.value:
+            return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_READONLY)
+
+        # Linux + macOS
+        has_write_permission = bool(stat.S_IWUSR & stat_result.st_mode)
+        has_read_permission = bool(stat.S_IRUSR & stat_result.st_mode)
+        return not has_write_permission and has_read_permission
 
     @staticmethod
     def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, SizeUnit]:
@@ -513,6 +528,11 @@ class FileStats(object):
                 self._data_dict[FileInfo.ARCHIVE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.ARCHIVE.value][dirname] += 1
 
+            if (FileInfo.READONLY.value in self._stats_set
+                    and FileUtil.is_readonly_file(pathname)):
+                self._data_dict[FileInfo.READONLY.value].setdefault(dirname, 0)
+                self._data_dict[FileInfo.READONLY.value][dirname] += 1
+
             if is_dir and recursive:
                 self._count(pathname)
             else:
@@ -569,8 +589,11 @@ class FileStats(object):
         if stats_type == FileInfo.NUM_BLOCK.value:
             return ['Pathname', 'Number of Blocks']
 
-        assert stats_type == FileInfo.ARCHIVE.value
-        return ['Dir Name', 'Number of Archive Files']
+        if stats_type == FileInfo.ARCHIVE.value:
+            return ['Dir Name', 'Number of Archive Files']
+
+        assert stats_type == FileInfo.READONLY.value
+        return ['Dir Name', 'Number of Readonly Files']
 
 
 def parse_args():
