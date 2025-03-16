@@ -67,6 +67,7 @@ class FileInfo(Enum):
     NUM_HIDDEN_FILE = 'nhidden'
     NUM_BLOCK = 'nblock'
     ARCHIVE = 'archive'
+    COMPRESSED = 'compress'
     READONLY = 'readonly'
 
 
@@ -184,14 +185,13 @@ class FileUtil(object):
         if not pathname or not os.path.exists(pathname):
             return False
 
+        stat_result = os.lstat(pathname)
         if sys.platform == Platform.WINDOWS.value:
-            stat_result = os.lstat(pathname)
             return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
 
-        if sys.platform == Platform.MACOS.value:
-            stat_result = os.lstat(pathname)
-            if bool(stat_result.st_flags & stat.UF_HIDDEN):
-                return True
+        if (sys.platform == Platform.MACOS.value
+                and bool(stat_result.st_flags & stat.UF_HIDDEN)):
+            return True
 
         # Linux + macOS
         filename = os.path.basename(pathname)
@@ -202,9 +202,13 @@ class FileUtil(object):
         if not pathname or not os.path.exists(pathname):
             return False
 
+        stat_result = os.lstat(pathname)
         if sys.platform == Platform.WINDOWS.value:
-            stat_result = os.lstat(pathname)
             return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_ARCHIVE)
+
+        if (sys.platform == Platform.MACOS.value
+                and bool(stat_result.st_flags & stat.SF_ARCHIVED)):
+            return True
 
         # Linux + macOS
         filename = os.path.basename(pathname)
@@ -216,6 +220,27 @@ class FileUtil(object):
         return ext == '.tar' or ext.startswith('.tar.')
 
     @staticmethod
+    def is_compressed_file(pathname):
+        if not pathname or not os.path.exists(pathname):
+            return False
+
+        stat_result = os.lstat(pathname)
+        if (sys.platform == Platform.WINDOWS.value
+                and bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_COMPRESSED)):
+            return True
+
+        if (sys.platform == Platform.MACOS.value
+                and bool(stat_result.st_flags & stat.UF_COMPRESSED)):
+            return True
+
+        ext = os.path.splitext(pathname)[1]
+        if not ext:
+            return False
+
+        ext = ext.lower()
+        return ext in {'.zip', '.rar', '.gz', '.tgz', '.bz2', '.7z'}
+
+    @staticmethod
     def is_readonly_file(pathname):
         if not pathname or not os.path.exists(pathname):
             return False
@@ -225,9 +250,9 @@ class FileUtil(object):
             return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_READONLY)
 
         # Linux + macOS
-        has_write_permission = bool(stat.S_IWUSR & stat_result.st_mode)
         has_read_permission = bool(stat.S_IRUSR & stat_result.st_mode)
-        return not has_write_permission and has_read_permission
+        has_write_permission = bool(stat.S_IWUSR & stat_result.st_mode)
+        return has_read_permission and not has_write_permission
 
     @staticmethod
     def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, SizeUnit]:
@@ -528,6 +553,11 @@ class FileStats(object):
                 self._data_dict[FileInfo.ARCHIVE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.ARCHIVE.value][dirname] += 1
 
+            if (FileInfo.COMPRESSED.value in self._stats_set
+                    and FileUtil.is_compressed_file(pathname)):
+                self._data_dict[FileInfo.COMPRESSED.value].setdefault(dirname, 0)
+                self._data_dict[FileInfo.COMPRESSED.value][dirname] += 1
+
             if (FileInfo.READONLY.value in self._stats_set
                     and FileUtil.is_readonly_file(pathname)):
                 self._data_dict[FileInfo.READONLY.value].setdefault(dirname, 0)
@@ -591,6 +621,9 @@ class FileStats(object):
 
         if stats_type == FileInfo.ARCHIVE.value:
             return ['Dir Name', 'Number of Archive Files']
+
+        if stats_type == FileInfo.COMPRESSED.value:
+            return ['Dir Name', 'Number of Compressed Files']
 
         assert stats_type == FileInfo.READONLY.value
         return ['Dir Name', 'Number of Readonly Files']
