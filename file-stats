@@ -388,6 +388,7 @@ class FileStats(object):
                  exclude_pattern: str = None,
                  per_file: bool = False,
                  use_name: bool = False,
+                 use_symbol: bool = False,
                  verbose: bool = False,
                  ignore_hidden_file: bool = False,
                  jobs: int = 1):
@@ -401,6 +402,7 @@ class FileStats(object):
 
         self._per_file = per_file
         self._use_name = use_name
+        self._use_symbol = use_symbol
         self._verbose = verbose
         self._ignore_hidden_file = ignore_hidden_file
         self._jobs = jobs
@@ -468,7 +470,10 @@ class FileStats(object):
                 self._data_dict[FileInfo.TYPE.value][file_type] += 1
 
             if FileInfo.PERM.value in self._stats_set:
-                perm = oct(file_stat.st_mode)[-3:]
+                if self._use_symbol:
+                    perm = stat.filemode(file_stat.st_mode)[1:]
+                else:
+                    perm = oct(file_stat.st_mode)[-3:]
                 self._data_dict[FileInfo.PERM.value].setdefault(file_type, {})
                 self._data_dict[FileInfo.PERM.value][file_type].setdefault(perm, 0)
                 self._data_dict[FileInfo.PERM.value][file_type][perm] += 1
@@ -724,6 +729,11 @@ def parse_args():
                         action='store_true',
                         help='Show user name or group name')
 
+    # permission options
+    parser.add_argument('--symbol',
+                        action='store_true',
+                        help='Show symbolic permission')
+
     # nfile options
     parser.add_argument('-f',
                         '--full-path',
@@ -918,6 +928,7 @@ def main():
                            exclude_pattern=exclude_pattern,
                            per_file=args.per_file,
                            use_name=args.name,
+                           use_symbol=args.symbol,
                            verbose=args.verbose,
                            jobs=jobs,
                            ignore_hidden_file=args.ignore_hidden_file)
