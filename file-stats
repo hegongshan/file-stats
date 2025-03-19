@@ -114,6 +114,18 @@ class SizeUnit(Enum):
     AUTO = 'auto'
 
 
+class SizeStats(Enum):
+    MIN = 'min'
+    MAX = 'max'
+    AVG = 'avg'
+    MEDIAN = 'median'
+    P90 = 'p90'
+    P95 = 'p95'
+    P99 = 'p99'
+    TOTAL_SIZE = 'total_size'
+    NUM_FILE = 'number_of_files'
+
+
 class PlotType(Enum):
     BAR = 'bar'
     PIE = 'pie'
@@ -853,26 +865,17 @@ def get_size_stats(stats_data, base, unit):
         if 0.99 <= percent and p99_size == 0:
             p99_size = size
 
-    min_size_desc = FileUtil.get_size_desc(min_size, base, unit)
-    max_size_desc = FileUtil.get_size_desc(max_size, base, unit)
-    avg_size_desc = FileUtil.get_size_desc(avg_size, base, unit)
-    median_size_desc = FileUtil.get_size_desc(median_size, base, unit)
-    p90_size_desc = FileUtil.get_size_desc(p90_size, base, unit)
-    p95_size_desc = FileUtil.get_size_desc(p95_size, base, unit)
-    p99_size_desc = FileUtil.get_size_desc(p99_size, base, unit)
-    total_size_desc = FileUtil.get_size_desc(total_size, base, unit)
-
-    out_list = []
-    out_list.append(f'Min: {min_size_desc}, '
-                    f'Max: {max_size_desc}')
-    out_list.append(f'Avg: {avg_size_desc}, '
-                    f'Median: {median_size_desc}')
-    out_list.append(f'P90: {p90_size_desc}, '
-                    f'P95: {p95_size_desc}, '
-                    f'P99: {p99_size_desc}')
-    out_list.append(f'Total Size: {total_size_desc}, '
-                    f'Number of Files: {total_file}')
-    return out_list
+    return {
+        SizeStats.MIN: FileUtil.get_size_desc(min_size, base, unit),
+        SizeStats.MAX: FileUtil.get_size_desc(max_size, base, unit),
+        SizeStats.AVG: FileUtil.get_size_desc(avg_size, base, unit),
+        SizeStats.MEDIAN: FileUtil.get_size_desc(median_size, base, unit),
+        SizeStats.P90: FileUtil.get_size_desc(p90_size, base, unit),
+        SizeStats.P95: FileUtil.get_size_desc(p95_size, base, unit),
+        SizeStats.P99: FileUtil.get_size_desc(p99_size, base, unit),
+        SizeStats.TOTAL_SIZE: FileUtil.get_size_desc(total_size, base, unit),
+        SizeStats.NUM_FILE: total_file
+    }
 
 
 def main():
@@ -933,13 +936,52 @@ def main():
                            jobs=jobs,
                            ignore_hidden_file=args.ignore_hidden_file)
 
+    base = BaseUnit.IEC.value
+    unit = SizeUnit.B
+    if args.ki:
+        unit = SizeUnit.KIB
+    elif args.mi:
+        unit = SizeUnit.MIB
+    elif args.gi:
+        unit = SizeUnit.GIB
+    elif args.ti:
+        unit = SizeUnit.TIB
+    elif args.pi:
+        unit = SizeUnit.PIB
+    elif args.si:
+        base = BaseUnit.SI.value
+        unit = SizeUnit.AUTO
+    elif args.human_readable:
+        unit = SizeUnit.AUTO
+
+    new_size_dict = {}
+    if FileInfo.SIZE.value in stats_type_set:
+        data = file_stats.data[FileInfo.SIZE.value]
+
+        if args.size_range and not args.per_file:
+            new_size_dict = count_size_range(data, base=base, unit=unit)
+        else:
+            if args.per_file:
+                for pathname, size in data.items():
+                    new_size_dict[pathname] = FileUtil.get_size_desc(size, base, unit)
+            else:
+                for size, num in data.items():
+                    size_desc = FileUtil.get_size_desc(size, base, unit)
+                    new_size_dict[size_desc] = num
+
     if args.json:
+        if FileInfo.SIZE.value in stats_type_set:
+            file_stats.data[FileInfo.SIZE.value] = new_size_dict
+
         if not args.output:
             print(json.dumps(file_stats.data, ensure_ascii=True, indent=4))
         else:
             with open(args.output, 'w+') as file:
                 json.dump(file_stats.data, file, ensure_ascii=True, indent=4)
     elif args.csv:
+        if FileInfo.SIZE.value in stats_type_set:
+            file_stats.data[FileInfo.SIZE.value] = new_size_dict
+
         if not args.output:
             for idx, (stats_type, stats_data) in enumerate(file_stats.data.items()):
                 # blank line
@@ -967,24 +1009,6 @@ def main():
                                 header=file_stats.header(stats_type),
                                 data=GenericUtil.flatten_dict(stats_data))
     else:
-        base = BaseUnit.IEC.value
-        unit = SizeUnit.B
-        if args.ki:
-            unit = SizeUnit.KIB
-        elif args.mi:
-            unit = SizeUnit.MIB
-        elif args.gi:
-            unit = SizeUnit.GIB
-        elif args.ti:
-            unit = SizeUnit.TIB
-        elif args.pi:
-            unit = SizeUnit.PIB
-        elif args.si:
-            base = BaseUnit.SI.value
-            unit = SizeUnit.AUTO
-        elif args.human_readable:
-            unit = SizeUnit.AUTO
-
         output_results = []
         if not args.quiet:
             # elapsed time
@@ -996,18 +1020,7 @@ def main():
                 continue
 
             if stats_type == FileInfo.SIZE.value:
-                if args.size_range and not args.per_file:
-                    data = count_size_range(data, base=base, unit=unit)
-                else:
-                    new_data_dict = {}
-                    if args.per_file:
-                        for pathname, size in data.items():
-                            new_data_dict[pathname] = FileUtil.get_size_desc(size, base, unit)
-                    else:
-                        for size, num in data.items():
-                            size_desc = FileUtil.get_size_desc(size, base, unit)
-                            new_data_dict[size_desc] = num
-                    data = new_data_dict
+                data = new_size_dict
 
             if stats_type == FileInfo.NUM_FILE.value:
                 res = GenericUtil.flatten_nfile_dict(data)
@@ -1051,7 +1064,16 @@ def main():
 
             # Statistics: Max, Min, Avg, Total, ...
             if stats_type == FileInfo.SIZE.value and not args.per_file:
-                output_results.extend(get_size_stats(file_stats.data[FileInfo.SIZE.value], base, unit))
+                size_stats = get_size_stats(file_stats.data[FileInfo.SIZE.value], base, unit)
+                output_results.append(f'Min: {size_stats[SizeStats.MIN]}, '
+                                      f'Max: {size_stats[SizeStats.MAX]}')
+                output_results.append(f'Avg: {size_stats[SizeStats.AVG]}, '
+                                      f'Median: {size_stats[SizeStats.MEDIAN]}')
+                output_results.append(f'P90: {size_stats[SizeStats.P90]}, '
+                                      f'P95: {size_stats[SizeStats.P95]}, '
+                                      f'P99: {size_stats[SizeStats.P99]}')
+                output_results.append(f'Total Size: {size_stats[SizeStats.TOTAL_SIZE]}, '
+                                      f'Number of Files: {size_stats[SizeStats.NUM_FILE]}')
 
         out = '\n'.join(output_results)
 
