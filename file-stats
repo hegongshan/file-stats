@@ -40,6 +40,7 @@ PROJECT_DESCRIPTION = f'{PROJECT_NAME} - Command-line based File Statistics Tool
 
 PATTERN = ', *'
 SEPARATOR = '-'
+UNKNOWN = 'unknown'
 
 
 ##################################################################
@@ -119,6 +120,10 @@ class SizeStats(Enum):
     MAX = 'max'
     AVG = 'avg'
     MEDIAN = 'median'
+    RANGE = 'range'
+    MODE = 'mode'
+    VARIANCE = 'variance'
+    STDDEV = 'stddev'
     P90 = 'p90'
     P95 = 'p95'
     P99 = 'p99'
@@ -250,7 +255,8 @@ class FileUtil(object):
             return False
 
         ext = ext.lower()
-        return ext in {'.zip', '.rar', '.gz', '.tgz', '.bz2', '.7z'}
+        return ext in {'.rar', '.zip', '.7z', '.gz', '.tgz',
+                       '.bz2', '.tbz2', '.xz', '.txz'}
 
     @staticmethod
     def is_readonly_file(pathname):
@@ -539,12 +545,12 @@ class FileStats(object):
                 self._data_dict[FileInfo.BIRTH_TIME.value].setdefault(date, 0)
                 self._data_dict[FileInfo.BIRTH_TIME.value][date] += 1
 
-            if FileInfo.EXTENSION.value in self._stats_set:
-                if file_type == FileType.FILE.value:
-                    ext = os.path.splitext(filename)[1]
-                    ext = ext if ext else 'unknown'
-                    self._data_dict[FileInfo.EXTENSION.value].setdefault(ext, 0)
-                    self._data_dict[FileInfo.EXTENSION.value][ext] += 1
+            if (FileInfo.EXTENSION.value in self._stats_set
+                    and file_type == FileType.FILE.value):
+                ext = os.path.splitext(filename)[1]
+                ext = ext if ext else UNKNOWN
+                self._data_dict[FileInfo.EXTENSION.value].setdefault(ext, 0)
+                self._data_dict[FileInfo.EXTENSION.value][ext] += 1
 
             if FileInfo.NUM_FILE.value in self._stats_set:
                 self._data_dict[FileInfo.NUM_FILE.value].setdefault(dirname, {})
@@ -836,6 +842,7 @@ def get_size_stats(stats_data, base, unit):
     total_file = 0
     max_size = 0
     min_size = math.inf
+    size_mode, max_num = 0, 0
     for size, num in stats_data.items():
         total_size += size * num
         total_file += num
@@ -843,8 +850,18 @@ def get_size_stats(stats_data, base, unit):
             max_size = size
         if size < min_size:
             min_size = size
+        if max_num < num:
+            max_num = num
+            size_mode = size
 
+    size_range = max_size - min_size
     avg_size = total_size / total_file
+
+    tmp_sum = 0
+    for size, num in stats_data.items():
+        tmp_sum += num * ((size - avg_size) ** 2)
+    size_var = 1. / total_file * tmp_sum
+    size_stddev = math.sqrt(size_var)
 
     stats_data_list = sorted(GenericUtil.flatten_dict(stats_data),
                              key=lambda x: x[0])
@@ -870,6 +887,10 @@ def get_size_stats(stats_data, base, unit):
         SizeStats.MAX: FileUtil.get_size_desc(max_size, base, unit),
         SizeStats.AVG: FileUtil.get_size_desc(avg_size, base, unit),
         SizeStats.MEDIAN: FileUtil.get_size_desc(median_size, base, unit),
+        SizeStats.RANGE: size_range,
+        SizeStats.MODE: FileUtil.get_size_desc(size_mode, base, unit),
+        SizeStats.VARIANCE: size_var,
+        SizeStats.STDDEV: size_stddev,
         SizeStats.P90: FileUtil.get_size_desc(p90_size, base, unit),
         SizeStats.P95: FileUtil.get_size_desc(p95_size, base, unit),
         SizeStats.P99: FileUtil.get_size_desc(p99_size, base, unit),
@@ -1069,6 +1090,10 @@ def main():
                                       f'Max: {size_stats[SizeStats.MAX]}')
                 output_results.append(f'Avg: {size_stats[SizeStats.AVG]}, '
                                       f'Median: {size_stats[SizeStats.MEDIAN]}')
+                output_results.append(f'Range: {size_stats[SizeStats.RANGE]}, '
+                                      f'Mode: {size_stats[SizeStats.MODE]}')
+                output_results.append(f'Var: {size_stats[SizeStats.VARIANCE]:.3f}, '
+                                      f'stddev: {size_stats[SizeStats.STDDEV]:.3f}')
                 output_results.append(f'P90: {size_stats[SizeStats.P90]}, '
                                       f'P95: {size_stats[SizeStats.P95]}, '
                                       f'P99: {size_stats[SizeStats.P99]}')
