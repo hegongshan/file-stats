@@ -837,6 +837,27 @@ def compare_entry(a, b):
     return 0
 
 
+def get_size_dict(args, file_stats, base, unit):
+    new_size_dict = {}
+    if FileInfo.SIZE.value not in file_stats.data:
+        return new_size_dict
+
+    data = file_stats.data[FileInfo.SIZE.value]
+
+    if args.size_range and not args.per_file:
+        new_size_dict = count_size_range(data, base=base, unit=unit)
+    else:
+        if args.per_file:
+            for pathname, size in data.items():
+                new_size_dict[pathname] = FileUtil.get_size_desc(size, base, unit)
+        else:
+            for size, num in data.items():
+                size_desc = FileUtil.get_size_desc(size, base, unit)
+                new_size_dict[size_desc] = num
+
+    return new_size_dict
+
+
 def get_size_stats(stats_data, base, unit):
     total_size = 0
     total_file = 0
@@ -897,6 +918,124 @@ def get_size_stats(stats_data, base, unit):
         SizeStats.TOTAL_SIZE: FileUtil.get_size_desc(total_size, base, unit),
         SizeStats.NUM_FILE: total_file
     }
+
+
+def export_json(args, file_stats):
+    if not args.output:
+        print(json.dumps(file_stats.data, ensure_ascii=True, indent=4))
+    else:
+        with open(args.output, 'w+') as file:
+            json.dump(file_stats.data, file, ensure_ascii=True, indent=4)
+
+
+def export_csv(args, file_stats):
+    if not args.output:
+        for idx, (stats_type, stats_data) in enumerate(file_stats.data.items()):
+            # blank line
+            if idx >= 1:
+                print()
+
+            print(','.join(file_stats.header(stats_type)))
+            if stats_type == FileInfo.NUM_FILE.value:
+                flatten_list = GenericUtil.flatten_nfile_dict(stats_data)
+            else:
+                flatten_list = GenericUtil.flatten_dict(stats_data)
+            for entry_list in flatten_list:
+                print(','.join(map(str, entry_list)))
+    else:
+        csv_file_name, csv_ext_name = os.path.splitext(args.output)
+        if not csv_ext_name:
+            csv_ext_name = '.csv'
+        only_one_entry = len(file_stats.data) == 1
+        for stats_type, stats_data in file_stats.data.items():
+            if only_one_entry:
+                filename = f'{csv_file_name}{csv_ext_name}'
+            else:
+                filename = f'{csv_file_name}-{stats_type}{csv_ext_name}'
+            FileUtil.to_csv(filename=filename,
+                            header=file_stats.header(stats_type),
+                            data=GenericUtil.flatten_dict(stats_data))
+
+
+def export_table(args, file_stats, stats_type_set, new_size_dict, base, unit):
+    output_results = []
+    if not args.quiet:
+        # elapsed time
+        output_results.append(f'{PROJECT_URL}  Time = {file_stats.time:.3f} s')
+    for stats_type in stats_type_set:
+        th = file_stats.header(stats_type=stats_type)
+        data = file_stats.data[stats_type]
+        if not data:
+            continue
+
+        if stats_type == FileInfo.SIZE.value:
+            data = new_size_dict
+
+        if stats_type == FileInfo.NUM_FILE.value:
+            res = GenericUtil.flatten_nfile_dict(data)
+        else:
+            res = GenericUtil.flatten_dict(data)
+        nested_list = sorted(res,
+                             key=cmp_to_key(compare_entry))
+
+        columns = [[header] for header in th]
+        for line in nested_list:
+            for col, entry in enumerate(line):
+                columns[col].append(entry)
+        column_widths = [get_max_width(col) + 3 for col in columns]
+
+        line_length = sum(column_widths) + len(th) - 1
+        terminal_width = shutil.get_terminal_size().columns
+        separator_line = SEPARATOR * min(line_length, terminal_width)
+
+        # Tabular header
+        output_results.append(separator_line)
+        format_string = ''
+        for i in range(len(th)):
+            if i == 0:
+                format_string += f'{{:<{column_widths[i]}}}'
+            else:
+                format_string += f' {{:>{column_widths[i]}}}'
+
+        output_results.append(format_string.format(*th))
+
+        # Tabular data
+        output_results.append(separator_line)
+        for items in nested_list:
+            line = ''
+            for idx, item in enumerate(items):
+                if idx == 0:
+                    line += f'{item:<{column_widths[idx]}} '
+                else:
+                    line += f'{item:>{column_widths[idx]}} '
+            output_results.append(line)
+        output_results.append(separator_line)
+
+        # Statistics: Max, Min, Avg, Total, ...
+        if stats_type == FileInfo.SIZE.value and not args.per_file:
+            size_stats = get_size_stats(file_stats.data[FileInfo.SIZE.value], base, unit)
+            output_results.append(f'Min: {size_stats[SizeStats.MIN]}, '
+                                  f'Max: {size_stats[SizeStats.MAX]}')
+            output_results.append(f'Avg: {size_stats[SizeStats.AVG]}, '
+                                  f'Median: {size_stats[SizeStats.MEDIAN]}')
+            output_results.append(f'Range: {size_stats[SizeStats.RANGE]}, '
+                                  f'Mode: {size_stats[SizeStats.MODE]}')
+            output_results.append(f'Var: {size_stats[SizeStats.VARIANCE]:.3f}, '
+                                  f'stddev: {size_stats[SizeStats.STDDEV]:.3f}')
+            output_results.append(f'P90: {size_stats[SizeStats.P90]}, '
+                                  f'P95: {size_stats[SizeStats.P95]}, '
+                                  f'P99: {size_stats[SizeStats.P99]}')
+            output_results.append(f'Total Size: {size_stats[SizeStats.TOTAL_SIZE]}, '
+                                  f'Number of Files: {size_stats[SizeStats.NUM_FILE]}')
+
+    out = '\n'.join(output_results)
+
+    # Output
+    if not args.output:
+        print(out)
+    else:
+        with open(args.output, 'w+') as file:
+            file.write(f'{out}\n')
 
 
 def main():
@@ -975,139 +1114,16 @@ def main():
     elif args.human_readable:
         unit = SizeUnit.AUTO
 
-    new_size_dict = {}
-    if FileInfo.SIZE.value in stats_type_set:
-        data = file_stats.data[FileInfo.SIZE.value]
-
-        if args.size_range and not args.per_file:
-            new_size_dict = count_size_range(data, base=base, unit=unit)
-        else:
-            if args.per_file:
-                for pathname, size in data.items():
-                    new_size_dict[pathname] = FileUtil.get_size_desc(size, base, unit)
-            else:
-                for size, num in data.items():
-                    size_desc = FileUtil.get_size_desc(size, base, unit)
-                    new_size_dict[size_desc] = num
+    new_size_dict = get_size_dict(args, file_stats, base, unit)
+    if (args.json or args.csv) and FileInfo.SIZE.value in file_stats.data:
+        file_stats.data[FileInfo.SIZE.value] = new_size_dict
 
     if args.json:
-        if FileInfo.SIZE.value in stats_type_set:
-            file_stats.data[FileInfo.SIZE.value] = new_size_dict
-
-        if not args.output:
-            print(json.dumps(file_stats.data, ensure_ascii=True, indent=4))
-        else:
-            with open(args.output, 'w+') as file:
-                json.dump(file_stats.data, file, ensure_ascii=True, indent=4)
+        export_json(args, file_stats)
     elif args.csv:
-        if FileInfo.SIZE.value in stats_type_set:
-            file_stats.data[FileInfo.SIZE.value] = new_size_dict
-
-        if not args.output:
-            for idx, (stats_type, stats_data) in enumerate(file_stats.data.items()):
-                # blank line
-                if idx >= 1:
-                    print()
-
-                print(','.join(file_stats.header(stats_type)))
-                if stats_type == FileInfo.NUM_FILE.value:
-                    flatten_list = GenericUtil.flatten_nfile_dict(stats_data)
-                else:
-                    flatten_list = GenericUtil.flatten_dict(stats_data)
-                for entry_list in flatten_list:
-                    print(','.join(map(str, entry_list)))
-        else:
-            csv_file_name, csv_ext_name = os.path.splitext(args.output)
-            if not csv_ext_name:
-                csv_ext_name = '.csv'
-            only_one_entry = len(file_stats.data) == 1
-            for stats_type, stats_data in file_stats.data.items():
-                if only_one_entry:
-                    filename = f'{csv_file_name}{csv_ext_name}'
-                else:
-                    filename = f'{csv_file_name}-{stats_type}{csv_ext_name}'
-                FileUtil.to_csv(filename=filename,
-                                header=file_stats.header(stats_type),
-                                data=GenericUtil.flatten_dict(stats_data))
+        export_csv(args, file_stats)
     else:
-        output_results = []
-        if not args.quiet:
-            # elapsed time
-            output_results.append(f'{PROJECT_URL}  Time = {file_stats.time:.3f} s')
-        for stats_type in stats_type_set:
-            th = file_stats.header(stats_type=stats_type)
-            data = file_stats.data[stats_type]
-            if not data:
-                continue
-
-            if stats_type == FileInfo.SIZE.value:
-                data = new_size_dict
-
-            if stats_type == FileInfo.NUM_FILE.value:
-                res = GenericUtil.flatten_nfile_dict(data)
-            else:
-                res = GenericUtil.flatten_dict(data)
-            nested_list = sorted(res,
-                                 key=cmp_to_key(compare_entry))
-
-            columns = [[header] for header in th]
-            for line in nested_list:
-                for col, entry in enumerate(line):
-                    columns[col].append(entry)
-            column_widths = [get_max_width(col) + 3 for col in columns]
-
-            line_length = sum(column_widths) + len(th) - 1
-            terminal_width = shutil.get_terminal_size().columns
-            separator_line = SEPARATOR * min(line_length, terminal_width)
-
-            # Tabular header
-            output_results.append(separator_line)
-            format_string = ''
-            for i in range(len(th)):
-                if i == 0:
-                    format_string += f'{{:<{column_widths[i]}}}'
-                else:
-                    format_string += f' {{:>{column_widths[i]}}}'
-
-            output_results.append(format_string.format(*th))
-
-            # Tabular data
-            output_results.append(separator_line)
-            for items in nested_list:
-                line = ''
-                for idx, item in enumerate(items):
-                    if idx == 0:
-                        line += f'{item:<{column_widths[idx]}} '
-                    else:
-                        line += f'{item:>{column_widths[idx]}} '
-                output_results.append(line)
-            output_results.append(separator_line)
-
-            # Statistics: Max, Min, Avg, Total, ...
-            if stats_type == FileInfo.SIZE.value and not args.per_file:
-                size_stats = get_size_stats(file_stats.data[FileInfo.SIZE.value], base, unit)
-                output_results.append(f'Min: {size_stats[SizeStats.MIN]}, '
-                                      f'Max: {size_stats[SizeStats.MAX]}')
-                output_results.append(f'Avg: {size_stats[SizeStats.AVG]}, '
-                                      f'Median: {size_stats[SizeStats.MEDIAN]}')
-                output_results.append(f'Range: {size_stats[SizeStats.RANGE]}, '
-                                      f'Mode: {size_stats[SizeStats.MODE]}')
-                output_results.append(f'Var: {size_stats[SizeStats.VARIANCE]:.3f}, '
-                                      f'stddev: {size_stats[SizeStats.STDDEV]:.3f}')
-                output_results.append(f'P90: {size_stats[SizeStats.P90]}, '
-                                      f'P95: {size_stats[SizeStats.P95]}, '
-                                      f'P99: {size_stats[SizeStats.P99]}')
-                output_results.append(f'Total Size: {size_stats[SizeStats.TOTAL_SIZE]}, '
-                                      f'Number of Files: {size_stats[SizeStats.NUM_FILE]}')
-
-        out = '\n'.join(output_results)
-
-        # Output
-        if not args.output:
-            print(out)
-        else:
-            with open(args.output, 'w+') as file:
-                file.write(f'{out}\n')
+        export_table(args, file_stats, stats_type_set, new_size_dict, base, unit)
 
     if args.plot_type:
         if args.plot_name:
