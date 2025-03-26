@@ -506,6 +506,7 @@ class FileStats(object):
 
             if FileInfo.NUM_LINK.value in self._stats_set:
                 nlink = file_stat.st_nlink
+                self._data_dict[FileInfo.NUM_LINK.value].setdefault(file_type, {})
                 self._data_dict[FileInfo.NUM_LINK.value][file_type].setdefault(nlink, 0)
                 self._data_dict[FileInfo.NUM_LINK.value][file_type][nlink] += 1
 
