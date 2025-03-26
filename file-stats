@@ -787,15 +787,47 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_max_width(data: List[str] or List[Tuple]):
-    if isinstance(data[0], str | int):
-        return max([len(str(entry)) for entry in data])
+def get_table(headers, datas):
+    # construct columns
+    columns = [[header] for header in headers]
+    for row in datas:
+        for col, entry in enumerate(row):
+            columns[col].append(entry)
 
-    max_width = 0
-    for entry_list in data:
-        width = max([len(str(entry)) for entry in entry_list])
-        max_width = max(width, max_width)
-    return max_width
+    # calculate the width of each column
+    column_widths = []
+    for column in columns:
+        column_width = max(map(lambda x: len(str(x)), column))
+        column_widths.append(column_width + 3)
+
+    # calculate the length of the separator line
+    line_length = sum(column_widths) + len(column_widths) - 1
+    terminal_width = shutil.get_terminal_size().columns
+    separator_line = SEPARATOR * min(line_length, terminal_width)
+
+    # Tabular header
+    output_results = [separator_line]
+    tabular_header = ''
+    for i in range(len(headers)):
+        if i == 0:
+            tabular_header += f'{headers[i]:<{column_widths[i]}}'
+        else:
+            tabular_header += f' {headers[i]:>{column_widths[i]}}'
+    output_results.append(tabular_header)
+    output_results.append(separator_line)
+
+    # Tabular data
+    for rows in datas:
+        row = ''
+        for idx, item in enumerate(rows):
+            if idx == 0:
+                row += f'{item:<{column_widths[idx]}}'
+            else:
+                row += f' {item:>{column_widths[idx]}}'
+        output_results.append(row)
+    output_results.append(separator_line)
+
+    return output_results
 
 
 def count_size_range(size_count_dict: Dict,
@@ -921,16 +953,16 @@ def get_size_stats(stats_data, base, unit):
     }
 
 
-def export_json(args, file_stats):
-    if not args.output:
+def export_json(file_stats, output):
+    if not output:
         print(json.dumps(file_stats.data, ensure_ascii=True, indent=4))
     else:
-        with open(args.output, 'w+') as file:
+        with open(output, 'w+') as file:
             json.dump(file_stats.data, file, ensure_ascii=True, indent=4)
 
 
-def export_csv(args, file_stats):
-    if not args.output:
+def export_csv(file_stats, output):
+    if not output:
         for idx, (stats_type, stats_data) in enumerate(file_stats.data.items()):
             # blank line
             if idx >= 1:
@@ -944,7 +976,7 @@ def export_csv(args, file_stats):
             for entry_list in flatten_list:
                 print(','.join(map(str, entry_list)))
     else:
-        csv_file_name, csv_ext_name = os.path.splitext(args.output)
+        csv_file_name, csv_ext_name = os.path.splitext(output)
         if not csv_ext_name:
             csv_ext_name = '.csv'
         only_one_entry = len(file_stats.data) == 1
@@ -979,55 +1011,19 @@ def export_table(args, file_stats, stats_type_set, new_size_dict, base, unit):
         nested_list = sorted(res,
                              key=cmp_to_key(compare_entry))
 
-        columns = [[header] for header in th]
-        for line in nested_list:
-            for col, entry in enumerate(line):
-                columns[col].append(entry)
-        column_widths = [get_max_width(col) + 3 for col in columns]
-
-        line_length = sum(column_widths) + len(th) - 1
-        terminal_width = shutil.get_terminal_size().columns
-        separator_line = SEPARATOR * min(line_length, terminal_width)
-
-        # Tabular header
-        output_results.append(separator_line)
-        format_string = ''
-        for i in range(len(th)):
-            if i == 0:
-                format_string += f'{{:<{column_widths[i]}}}'
-            else:
-                format_string += f' {{:>{column_widths[i]}}}'
-
-        output_results.append(format_string.format(*th))
-
-        # Tabular data
-        output_results.append(separator_line)
-        for items in nested_list:
-            line = ''
-            for idx, item in enumerate(items):
-                if idx == 0:
-                    line += f'{item:<{column_widths[idx]}} '
-                else:
-                    line += f'{item:>{column_widths[idx]}} '
-            output_results.append(line)
-        output_results.append(separator_line)
+        output_results.extend(get_table(th, nested_list))
 
         # Statistics: Max, Min, Avg, Total, ...
         if stats_type == FileInfo.SIZE.value and not args.per_file:
             size_stats = get_size_stats(file_stats.data[FileInfo.SIZE.value], base, unit)
-            output_results.append(f'Min: {size_stats[SizeStats.MIN]}, '
-                                  f'Max: {size_stats[SizeStats.MAX]}')
-            output_results.append(f'Avg: {size_stats[SizeStats.AVG]}, '
-                                  f'Median: {size_stats[SizeStats.MEDIAN]}')
-            output_results.append(f'Range: {size_stats[SizeStats.RANGE]}, '
-                                  f'Mode: {size_stats[SizeStats.MODE]}')
-            output_results.append(f'Var: {size_stats[SizeStats.VARIANCE]:.3f}, '
-                                  f'stddev: {size_stats[SizeStats.STDDEV]:.3f}')
-            output_results.append(f'P90: {size_stats[SizeStats.P90]}, '
-                                  f'P95: {size_stats[SizeStats.P95]}, '
-                                  f'P99: {size_stats[SizeStats.P99]}')
-            output_results.append(f'Total Size: {size_stats[SizeStats.TOTAL_SIZE]}, '
-                                  f'Number of Files: {size_stats[SizeStats.NUM_FILE]}')
+            output_results.append('')
+            output_results.append('Additional Size Statistics:')
+            size_stats_header = []
+            size_stats_data = []
+            for size_stats_type in SizeStats:
+                size_stats_header.append(size_stats_type.value)
+                size_stats_data.append(size_stats[size_stats_type])
+            output_results.extend(get_table(size_stats_header, [size_stats_data]))
 
     out = '\n'.join(output_results)
 
@@ -1120,9 +1116,9 @@ def main():
         file_stats.data[FileInfo.SIZE.value] = new_size_dict
 
     if args.json:
-        export_json(args, file_stats)
+        export_json(file_stats, args.output)
     elif args.csv:
-        export_csv(args, file_stats)
+        export_csv(file_stats, args.output)
     else:
         export_table(args, file_stats, stats_type_set, new_size_dict, base, unit)
 
