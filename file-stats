@@ -70,6 +70,7 @@ class FileInfo(Enum):
     ARCHIVE = 'archive'
     COMPRESSED = 'compress'
     READONLY = 'readonly'
+    EXECUTABLE = 'executable'
 
 
 class FileType(Enum):
@@ -268,9 +269,17 @@ class FileUtil(object):
             return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_READONLY)
 
         # Linux + macOS
-        has_read_permission = bool(stat.S_IRUSR & stat_result.st_mode)
-        has_write_permission = bool(stat.S_IWUSR & stat_result.st_mode)
+        has_read_permission = bool(stat_result.st_mode & stat.S_IRUSR)
+        has_write_permission = bool(stat_result.st_mode & stat.S_IWUSR)
         return has_read_permission and not has_write_permission
+
+    @staticmethod
+    def is_executable_file(pathname):
+        if not pathname or not os.path.exists(pathname):
+            return False
+
+        stat_result = os.lstat(pathname)
+        return bool(stat_result.st_mode & stat.S_IXUSR)
 
     @staticmethod
     def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, SizeUnit]:
@@ -610,6 +619,12 @@ class FileStats(object):
                 self._data_dict[FileInfo.READONLY.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.READONLY.value][dirname] += 1
 
+            if (FileInfo.EXECUTABLE.value in self._stats_set
+                    and not is_dir
+                    and FileUtil.is_executable_file(pathname)):
+                self._data_dict[FileInfo.EXECUTABLE.value].setdefault(dirname, 0)
+                self._data_dict[FileInfo.EXECUTABLE.value][dirname] += 1
+
             if is_dir and recursive:
                 self._count(pathname)
             else:
@@ -672,8 +687,11 @@ class FileStats(object):
         if stats_type == FileInfo.COMPRESSED.value:
             return ['Dir Name', 'Number of Compressed Files']
 
-        assert stats_type == FileInfo.READONLY.value
-        return ['Dir Name', 'Number of Readonly Files']
+        if stats_type == FileInfo.READONLY.value:
+            return ['Dir Name', 'Number of Readonly Files']
+
+        assert stats_type == FileInfo.EXECUTABLE.value
+        return ['Dir Name', 'Number of Executable Files']
 
 
 def parse_args():
