@@ -71,6 +71,7 @@ class FileInfo(Enum):
     COMPRESSED = 'compress'
     ENCRYPTED = 'encrypted'
     READONLY = 'readonly'
+    APPENDONLY = 'appendonly'
     EXECUTABLE = 'executable'
 
 
@@ -280,10 +281,25 @@ class FileUtil(object):
         if sys.platform == Platform.WINDOWS.value:
             return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_READONLY)
 
+        if (sys.platform == Platform.MACOS.value
+                and bool(stat_result.st_flags & stat.UF_IMMUTABLE)):
+            return True
+
         # Linux + macOS
         has_read_permission = bool(stat_result.st_mode & stat.S_IRUSR)
         has_write_permission = bool(stat_result.st_mode & stat.S_IWUSR)
         return has_read_permission and not has_write_permission
+
+    @staticmethod
+    def is_appendonly(pathname):
+        if not pathname or not os.path.exists(pathname):
+            return False
+
+        stat_result = os.lstat(pathname)
+        if sys.platform == Platform.MACOS.value:
+            return bool(stat_result.st_flags & stat.UF_APPEND)
+
+        return False
 
     @staticmethod
     def is_executable_file(pathname):
@@ -636,6 +652,10 @@ class FileStats(object):
                 self._data_dict[FileInfo.READONLY.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.READONLY.value][dirname] += 1
 
+            if FileInfo.APPENDONLY.value in self._stats_set and FileUtil.is_appendonly(pathname):
+                self._data_dict[FileInfo.APPENDONLY.value].setdefault(dirname, 0)
+                self._data_dict[FileInfo.APPENDONLY.value][dirname] += 1
+
             if (FileInfo.EXECUTABLE.value in self._stats_set
                     and not is_dir
                     and FileUtil.is_executable_file(pathname)):
@@ -709,6 +729,9 @@ class FileStats(object):
 
         if stats_type == FileInfo.READONLY.value:
             return ['Dir Name', 'Number of Readonly Files']
+
+        if stats_type == FileInfo.APPENDONLY.value:
+            return ['Dir Name', 'Number of Append-only Files']
 
         assert stats_type == FileInfo.EXECUTABLE.value
         return ['Dir Name', 'Number of Executable Files']
