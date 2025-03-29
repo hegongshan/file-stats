@@ -797,28 +797,23 @@ def parse_args():
                                  'Use unit suffixes: Byte, Kilobyte, Megabyte, Gigabyte, Terabyte and Petabyte '
                                  'based on powers of 1024.')
     size_group.add_argument('-k',
-                            '--ki',
                             action='store_true',
                             help='Use KiB')
     size_group.add_argument('-m',
-                            '--mi',
                             action='store_true',
                             help='Use MiB')
     size_group.add_argument('-g',
-                            '--gi',
                             action='store_true',
                             help='Use GiB')
     size_group.add_argument('-t',
-                            '--ti',
                             action='store_true',
                             help='Use TiB')
     size_group.add_argument('-p',
-                            '--pi',
                             action='store_true',
                             help='Use PiB')
-    size_group.add_argument('--si',
-                            action='store_true',
-                            help='Use international system of units (SI)')
+    parser.add_argument('--si',
+                        action='store_true',
+                        help='Use international system of units (SI)')
     parser.add_argument('--size-range',
                         action='store_true',
                         help='Show size range')
@@ -1177,23 +1172,25 @@ def main():
                            jobs=jobs,
                            ignore_hidden_file=args.ignore_hidden_file)
 
-    base = BaseUnit.IEC.value
-    unit = SizeUnit.B
-    if args.ki:
-        unit = SizeUnit.KIB
-    elif args.mi:
-        unit = SizeUnit.MIB
-    elif args.gi:
-        unit = SizeUnit.GIB
-    elif args.ti:
-        unit = SizeUnit.TIB
-    elif args.pi:
-        unit = SizeUnit.PIB
-    elif args.si:
+    if args.si:
         base = BaseUnit.SI.value
-        unit = SizeUnit.AUTO
+    else:
+        base = BaseUnit.IEC.value
+
+    if args.k:
+        unit = SizeUnit.KB if args.si else SizeUnit.KIB
+    elif args.m:
+        unit = SizeUnit.MB if args.si else SizeUnit.MIB
+    elif args.g:
+        unit = SizeUnit.GB if args.si else SizeUnit.GIB
+    elif args.t:
+        unit = SizeUnit.TB if args.si else SizeUnit.TIB
+    elif args.p:
+        unit = SizeUnit.PB if args.si else SizeUnit.PIB
     elif args.human_readable:
         unit = SizeUnit.AUTO
+    else:
+        unit = SizeUnit.B
 
     new_size_dict = get_size_dict(args, file_stats, base, unit)
     if (args.json or args.csv) and FileInfo.SIZE.value in file_stats.data:
