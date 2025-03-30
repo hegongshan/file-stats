@@ -181,16 +181,25 @@ class FileUtil(object):
 
     @staticmethod
     def calculate_file_lines(pathname):
+        # large file: > 100 MiB, read it line by line
+        # other file: <= 100 MiB, read all lines at a time
+        is_large_file = os.path.getsize(pathname) > 100 * 1024 * 1024
         try:
             count = 0
             with open(pathname, 'r') as file:
-                for _ in file:
-                    count += 1
+                if is_large_file:
+                    for _ in file:
+                        count += 1
+                else:
+                    count += len(file.readlines())
         except UnicodeDecodeError:
             count = 0
             with open(pathname, 'rb') as file:
-                for _ in file:
-                    count += 1
+                if is_large_file:
+                    for _ in file:
+                        count += 1
+                else:
+                    count += len(file.readlines())
         return count
 
     @staticmethod
@@ -793,24 +802,22 @@ def parse_args():
     size_group = parser.add_mutually_exclusive_group()
     size_group.add_argument('-H', '--human-readable',
                             action='store_true',
-                            help='Human-readable output. '
-                                 'Use unit suffixes: Byte, Kilobyte, Megabyte, Gigabyte, Terabyte and Petabyte '
-                                 'based on powers of 1024.')
+                            help='Human-readable output. ')
     size_group.add_argument('-k',
                             action='store_true',
-                            help='Use KiB')
+                            help='Use KiB, or KB with --si')
     size_group.add_argument('-m',
                             action='store_true',
-                            help='Use MiB')
+                            help='Use MiB, or MB with --si')
     size_group.add_argument('-g',
                             action='store_true',
-                            help='Use GiB')
+                            help='Use GiB, or GB with --si')
     size_group.add_argument('-t',
                             action='store_true',
-                            help='Use TiB')
+                            help='Use TiB, or TB with --si')
     size_group.add_argument('-p',
                             action='store_true',
-                            help='Use PiB')
+                            help='Use PiB, or PB with --si')
     parser.add_argument('--si',
                         action='store_true',
                         help='Use international system of units (SI)')
