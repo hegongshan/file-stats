@@ -473,7 +473,7 @@ class FileStats(object):
                  exclude_files: List[str] = None,
                  exclude_exts: List[str] = None,
                  exclude_pattern: str = None,
-                 per_file: bool = False,
+                 detail: bool = False,
                  use_name: bool = False,
                  use_symbol: bool = False,
                  verbose: bool = False,
@@ -487,7 +487,7 @@ class FileStats(object):
         self._exclude_exts = exclude_exts
         self._exclude_patten = exclude_pattern
 
-        self._per_file = per_file
+        self._detail = detail
         self._use_name = use_name
         self._use_symbol = use_symbol
         self._verbose = verbose
@@ -553,21 +553,28 @@ class FileStats(object):
                 continue
 
             if FileInfo.TYPE.value in self._stats_set:
-                self._data_dict[FileInfo.TYPE.value].setdefault(file_type, 0)
-                self._data_dict[FileInfo.TYPE.value][file_type] += 1
+                if self._detail:
+                    self._data_dict[FileInfo.TYPE.value][pathname] = file_type
+                else:
+                    self._data_dict[FileInfo.TYPE.value].setdefault(file_type, 0)
+                    self._data_dict[FileInfo.TYPE.value][file_type] += 1
 
             if FileInfo.PERM.value in self._stats_set:
                 if self._use_symbol:
                     perm = stat.filemode(file_stat.st_mode)[1:]
                 else:
                     perm = oct(file_stat.st_mode)[-3:]
-                self._data_dict[FileInfo.PERM.value].setdefault(file_type, {})
-                self._data_dict[FileInfo.PERM.value][file_type].setdefault(perm, 0)
-                self._data_dict[FileInfo.PERM.value][file_type][perm] += 1
+
+                if self._detail:
+                    self._data_dict[FileInfo.PERM.value][pathname] = perm
+                else:
+                    self._data_dict[FileInfo.PERM.value].setdefault(file_type, {})
+                    self._data_dict[FileInfo.PERM.value][file_type].setdefault(perm, 0)
+                    self._data_dict[FileInfo.PERM.value][file_type][perm] += 1
 
             if FileInfo.SIZE.value in self._stats_set and not is_dir:
                 size = file_stat.st_size
-                if self._per_file:
+                if self._detail:
                     self._data_dict[FileInfo.SIZE.value][pathname] = size
                 else:
                     self._data_dict[FileInfo.SIZE.value].setdefault(size, 0)
@@ -575,9 +582,12 @@ class FileStats(object):
 
             if FileInfo.NUM_LINK.value in self._stats_set:
                 nlink = file_stat.st_nlink
-                self._data_dict[FileInfo.NUM_LINK.value].setdefault(file_type, {})
-                self._data_dict[FileInfo.NUM_LINK.value][file_type].setdefault(nlink, 0)
-                self._data_dict[FileInfo.NUM_LINK.value][file_type][nlink] += 1
+                if self._detail:
+                    self._data_dict[FileInfo.NUM_LINK.value][pathname] = nlink
+                else:
+                    self._data_dict[FileInfo.NUM_LINK.value].setdefault(file_type, {})
+                    self._data_dict[FileInfo.NUM_LINK.value][file_type].setdefault(nlink, 0)
+                    self._data_dict[FileInfo.NUM_LINK.value][file_type][nlink] += 1
 
             if FileInfo.UID.value in self._stats_set:
                 uid = file_stat.st_uid
@@ -585,8 +595,11 @@ class FileStats(object):
                     import pwd
                     uid = pwd.getpwuid(uid).pw_name
 
-                self._data_dict[FileInfo.UID.value].setdefault(uid, 0)
-                self._data_dict[FileInfo.UID.value][uid] += 1
+                if self._detail:
+                    self._data_dict[FileInfo.UID.value][pathname] = uid
+                else:
+                    self._data_dict[FileInfo.UID.value].setdefault(uid, 0)
+                    self._data_dict[FileInfo.UID.value][uid] += 1
 
             if FileInfo.GID.value in self._stats_set:
                 gid = file_stat.st_gid
@@ -594,33 +607,49 @@ class FileStats(object):
                     import grp
                     gid = grp.getgrgid(gid).gr_name
 
-                self._data_dict[FileInfo.GID.value].setdefault(gid, 0)
-                self._data_dict[FileInfo.GID.value][gid] += 1
+                if self._detail:
+                    self._data_dict[FileInfo.GID.value][pathname] = gid
+                else:
+                    self._data_dict[FileInfo.GID.value].setdefault(gid, 0)
+                    self._data_dict[FileInfo.GID.value][gid] += 1
 
+            fmt = '%Y-%m-%d %H:%M:%S' if self._detail else '%Y-%m-%d'
             if FileInfo.CHANGE_TIME.value in self._stats_set:
                 ctime = file_stat.st_ctime
-                date = datetime.fromtimestamp(ctime).strftime('%Y-%m-%d')
-                self._data_dict[FileInfo.CHANGE_TIME.value].setdefault(date, 0)
-                self._data_dict[FileInfo.CHANGE_TIME.value][date] += 1
+                date = datetime.fromtimestamp(ctime).strftime(fmt)
+                if self._detail:
+                    self._data_dict[FileInfo.CHANGE_TIME.value][pathname] = date
+                else:
+                    self._data_dict[FileInfo.CHANGE_TIME.value].setdefault(date, 0)
+                    self._data_dict[FileInfo.CHANGE_TIME.value][date] += 1
 
             if FileInfo.MODIFICATION_TIME.value in self._stats_set:
                 mtime = file_stat.st_mtime
-                date = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
-                self._data_dict[FileInfo.MODIFICATION_TIME.value].setdefault(date, 0)
-                self._data_dict[FileInfo.MODIFICATION_TIME.value][date] += 1
+                date = datetime.fromtimestamp(mtime).strftime(fmt)
+                if self._detail:
+                    self._data_dict[FileInfo.MODIFICATION_TIME.value][pathname] = date
+                else:
+                    self._data_dict[FileInfo.MODIFICATION_TIME.value].setdefault(date, 0)
+                    self._data_dict[FileInfo.MODIFICATION_TIME.value][date] += 1
 
             if FileInfo.BIRTH_TIME.value in self._stats_set:
                 btime = file_stat.st_birthtime
-                date = datetime.fromtimestamp(btime).strftime('%Y-%m-%d')
-                self._data_dict[FileInfo.BIRTH_TIME.value].setdefault(date, 0)
-                self._data_dict[FileInfo.BIRTH_TIME.value][date] += 1
+                date = datetime.fromtimestamp(btime).strftime(fmt)
+                if self._detail:
+                    self._data_dict[FileInfo.BIRTH_TIME.value][pathname] = date
+                else:
+                    self._data_dict[FileInfo.BIRTH_TIME.value].setdefault(date, 0)
+                    self._data_dict[FileInfo.BIRTH_TIME.value][date] += 1
 
             if (FileInfo.EXTENSION.value in self._stats_set
                     and file_type == FileType.FILE.value):
                 ext = os.path.splitext(filename)[1]
                 ext = ext if ext else UNKNOWN
-                self._data_dict[FileInfo.EXTENSION.value].setdefault(ext, 0)
-                self._data_dict[FileInfo.EXTENSION.value][ext] += 1
+                if self._detail:
+                    self._data_dict[FileInfo.EXTENSION.value][pathname] = ext
+                else:
+                    self._data_dict[FileInfo.EXTENSION.value].setdefault(ext, 0)
+                    self._data_dict[FileInfo.EXTENSION.value][ext] += 1
 
             if FileInfo.NUM_FILE.value in self._stats_set:
                 self._data_dict[FileInfo.NUM_FILE.value].setdefault(dirname, {})
@@ -680,17 +709,23 @@ class FileStats(object):
 
     def header(self, stats_type: str):
         if stats_type == FileInfo.SIZE.value:
-            if self._per_file:
+            if self._detail:
                 return ['File Name', 'File Size']
             return ['File Size', 'Number of Files']
 
         if stats_type == FileInfo.TYPE.value:
+            if self._detail:
+                return ['File Name', 'File Type']
             return ['File Type', 'Number of Files']
 
         if stats_type == FileInfo.PERM.value:
+            if self._detail:
+                return ['File Name', 'File Permission']
             return ['File Type', 'Permission', 'Number of Files']
 
         if stats_type == FileInfo.NUM_LINK.value:
+            if self._detail:
+                return ['File Name', 'Number of Links']
             return ['File Type', 'Number of Links', 'Number of Files']
 
         if stats_type == FileInfo.UID.value:
@@ -704,15 +739,23 @@ class FileStats(object):
             return ['Group ID', 'Number of Files']
 
         if stats_type == FileInfo.CHANGE_TIME.value:
+            if self._detail:
+                return ['File Name', 'Change Time']
             return ['Change Time', 'Number of Files']
 
         if stats_type == FileInfo.MODIFICATION_TIME.value:
+            if self._detail:
+                return ['File Name', 'Modification Time']
             return ['Modification Time', 'Number of Files']
 
         if stats_type == FileInfo.BIRTH_TIME.value:
+            if self._detail:
+                return ['File Name', 'Birth Time']
             return ['Birth Time', 'Number of Files']
 
         if stats_type == FileInfo.EXTENSION.value:
+            if self._detail:
+                return ['File Name', 'Extension']
             return ['Extension', 'Number of Files']
 
         if stats_type == FileInfo.NUM_FILE.value:
@@ -773,6 +816,9 @@ def parse_args():
                         action='store_true',
                         default=False,
                         help='Ignore hidden files')
+    parser.add_argument('--detail',
+                        action='store_true',
+                        help='Show detail')
 
     # Mode options
     parser.add_argument('-v',
@@ -824,9 +870,6 @@ def parse_args():
     parser.add_argument('--size-range',
                         action='store_true',
                         help='Show size range')
-    parser.add_argument('--per-file',
-                        action='store_true',
-                        help='Show the size of each file')
 
     # uid/gid options
     parser.add_argument('-n',
@@ -963,16 +1006,15 @@ def get_size_dict(args, file_stats, base, unit):
 
     data = file_stats.data[FileInfo.SIZE.value]
 
-    if args.size_range and not args.per_file:
+    if args.size_range and not args.detail:
         new_size_dict = count_size_range(data, base=base, unit=unit)
+    elif args.detail:
+        for pathname, size in data.items():
+            new_size_dict[pathname] = FileUtil.get_size_desc(size, base, unit)
     else:
-        if args.per_file:
-            for pathname, size in data.items():
-                new_size_dict[pathname] = FileUtil.get_size_desc(size, base, unit)
-        else:
-            for size, num in data.items():
-                size_desc = FileUtil.get_size_desc(size, base, unit)
-                new_size_dict[size_desc] = num
+        for size, num in data.items():
+            size_desc = FileUtil.get_size_desc(size, base, unit)
+            new_size_dict[size_desc] = num
 
     return new_size_dict
 
@@ -1100,7 +1142,7 @@ def export_table(args, file_stats, stats_type_set, new_size_dict, base, unit):
         output_results.extend(get_table(th, nested_list))
 
         # Statistics: Max, Min, Avg, Total, ...
-        if stats_type == FileInfo.SIZE.value and not args.per_file:
+        if stats_type == FileInfo.SIZE.value and not args.detail:
             size_stats = get_additional_size_stats(file_stats.data[FileInfo.SIZE.value], base, unit)
             output_results.append('')
             output_results.append('Additional Size Statistics:')
@@ -1172,7 +1214,7 @@ def main():
                            exclude_files=exclude_files,
                            exclude_exts=exclude_exts,
                            exclude_pattern=exclude_pattern,
-                           per_file=args.per_file,
+                           detail=args.detail,
                            use_name=args.name,
                            use_symbol=args.symbol,
                            verbose=args.verbose,
