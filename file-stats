@@ -146,7 +146,7 @@ class PlotType(Enum):
 class FileUtil(object):
 
     @staticmethod
-    def get_file_type(mode):
+    def get_file_type(mode: int) -> str:
         if stat.S_ISDIR(mode):
             return FileType.DIR.value
 
@@ -180,7 +180,7 @@ class FileUtil(object):
         return FileType.UNKNOWN.value
 
     @staticmethod
-    def calculate_file_lines(pathname):
+    def calculate_file_lines(pathname: str) -> int:
         # large file: > 100 MiB, read it line by line
         # other file: <= 100 MiB, read all lines at a time
         is_large_file = os.path.getsize(pathname) > 100 * 1024 * 1024
@@ -203,14 +203,7 @@ class FileUtil(object):
         return count
 
     @staticmethod
-    def to_csv(filename, header, data):
-        with open(filename, 'w+') as file:
-            csv_writer = csv.writer(file)
-            csv_writer.writerow(header)
-            csv_writer.writerows(data)
-
-    @staticmethod
-    def is_hidden_file(pathname) -> bool:
+    def is_hidden(pathname: str) -> bool:
         if not pathname or not os.path.exists(pathname):
             return False
 
@@ -227,7 +220,7 @@ class FileUtil(object):
         return filename[0] == '.'
 
     @staticmethod
-    def is_archive_file(pathname) -> bool:
+    def is_archive(pathname: str) -> bool:
         if not pathname or not os.path.exists(pathname):
             return False
 
@@ -249,7 +242,7 @@ class FileUtil(object):
         return ext == '.tar' or ext.startswith('.tar.')
 
     @staticmethod
-    def is_compressed_file(pathname):
+    def is_compressed(pathname: str) -> bool:
         if not pathname or not os.path.exists(pathname):
             return False
 
@@ -271,7 +264,7 @@ class FileUtil(object):
                        '.bz2', '.tbz2', '.xz', '.txz'}
 
     @staticmethod
-    def is_encrypted_file(pathname):
+    def is_encrypted(pathname: str) -> bool:
         if not pathname or not os.path.exists(pathname):
             return False
 
@@ -282,7 +275,7 @@ class FileUtil(object):
         return False
 
     @staticmethod
-    def is_readonly_file(pathname):
+    def is_readonly(pathname: str) -> bool:
         if not pathname or not os.path.exists(pathname):
             return False
 
@@ -300,7 +293,7 @@ class FileUtil(object):
         return has_read_permission and not has_write_permission
 
     @staticmethod
-    def is_appendonly(pathname):
+    def is_appendonly(pathname: str) -> bool:
         if not pathname or not os.path.exists(pathname):
             return False
 
@@ -311,7 +304,7 @@ class FileUtil(object):
         return False
 
     @staticmethod
-    def is_executable_file(pathname):
+    def is_executable(pathname: str) -> bool:
         if not pathname or not os.path.exists(pathname):
             return False
 
@@ -346,7 +339,7 @@ class FileUtil(object):
         return f'{size / (base ** exp):{precision}} {unit.value}'
 
     @staticmethod
-    def get_size_exp(unit: SizeUnit):
+    def get_size_exp(unit: SizeUnit) -> int:
         if unit == SizeUnit.B:
             return 0
         if unit == SizeUnit.KIB or unit == SizeUnit.KB:
@@ -363,7 +356,7 @@ class FileUtil(object):
 class GenericUtil(object):
 
     @staticmethod
-    def flatten_dict(data: Dict):
+    def flatten_dict(data: Dict) -> List:
         flatten_list = []
         for k, v in data.items():
             if isinstance(v, dict):
@@ -375,14 +368,14 @@ class GenericUtil(object):
         return flatten_list
 
     @staticmethod
-    def flatten_nfile_dict(data: Dict):
+    def flatten_nfile_dict(data: Dict) -> List:
         flatten_list = []
         for path, nfile in data.items():
             flatten_list.append([path] + [num for ft, num in nfile.items()])
         return flatten_list
 
     @staticmethod
-    def print_error(message):
+    def print_error(message: str) -> None:
         print(f'\033[91m{message}\033[0m')
 
 
@@ -531,7 +524,7 @@ class FileStats(object):
             if self._verbose:
                 print(f'{file_type}: {pathname}')
 
-            if self._ignore_hidden_file and FileUtil.is_hidden_file(pathname):
+            if self._ignore_hidden_file and FileUtil.is_hidden(pathname):
                 continue
 
             if self._exclude_dirs and is_dir and filename in self._exclude_dirs:
@@ -663,7 +656,7 @@ class FileStats(object):
                 self._data_dict[FileInfo.NUM_LINE.value][pathname] = FileUtil.calculate_file_lines(pathname)
 
             if (FileInfo.NUM_HIDDEN_FILE.value in self._stats_set
-                    and FileUtil.is_hidden_file(pathname)):
+                    and FileUtil.is_hidden(pathname)):
                 self._data_dict[FileInfo.NUM_HIDDEN_FILE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.NUM_HIDDEN_FILE.value][dirname] += 1
 
@@ -671,22 +664,22 @@ class FileStats(object):
                 self._data_dict[FileInfo.NUM_BLOCK.value][pathname] = file_stat.st_blocks
 
             if (FileInfo.ARCHIVE.value in self._stats_set
-                    and FileUtil.is_archive_file(pathname)):
+                    and FileUtil.is_archive(pathname)):
                 self._data_dict[FileInfo.ARCHIVE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.ARCHIVE.value][dirname] += 1
 
             if (FileInfo.COMPRESSED.value in self._stats_set
-                    and FileUtil.is_compressed_file(pathname)):
+                    and FileUtil.is_compressed(pathname)):
                 self._data_dict[FileInfo.COMPRESSED.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.COMPRESSED.value][dirname] += 1
 
             if (FileInfo.ENCRYPTED.value in self._data_dict
-                    and FileUtil.is_encrypted_file(pathname)):
+                    and FileUtil.is_encrypted(pathname)):
                 self._data_dict[FileInfo.ENCRYPTED.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.ENCRYPTED.value][dirname] += 1
 
             if (FileInfo.READONLY.value in self._stats_set
-                    and FileUtil.is_readonly_file(pathname)):
+                    and FileUtil.is_readonly(pathname)):
                 self._data_dict[FileInfo.READONLY.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.READONLY.value][dirname] += 1
 
@@ -696,7 +689,7 @@ class FileStats(object):
 
             if (FileInfo.EXECUTABLE.value in self._stats_set
                     and not is_dir
-                    and FileUtil.is_executable_file(pathname)):
+                    and FileUtil.is_executable(pathname)):
                 self._data_dict[FileInfo.EXECUTABLE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.EXECUTABLE.value][dirname] += 1
 
@@ -1113,9 +1106,11 @@ def export_csv(file_stats, output):
                 filename = f'{csv_file_name}{csv_ext_name}'
             else:
                 filename = f'{csv_file_name}-{stats_type}{csv_ext_name}'
-            FileUtil.to_csv(filename=filename,
-                            header=file_stats.header(stats_type),
-                            data=GenericUtil.flatten_dict(stats_data))
+
+            with open(filename, 'w+') as file:
+                csv_writer = csv.writer(file)
+                csv_writer.writerow(file_stats.header(stats_type))
+                csv_writer.writerows(GenericUtil.flatten_dict(stats_data))
 
 
 def export_table(args, file_stats, stats_type_set, new_size_dict, base, unit):
