@@ -53,6 +53,7 @@ class Platform(Enum):
 
 
 class FileInfo(Enum):
+    # basic attributes
     TYPE = 'type'
     PERM = 'perm'
     SIZE = 'size'
@@ -62,6 +63,8 @@ class FileInfo(Enum):
     CHANGE_TIME = 'ctime'
     MODIFICATION_TIME = 'mtime'
     BIRTH_TIME = 'btime'
+
+    # extended attributes
     EXTENSION = 'ext'
     NUM_FILE = 'nfile'
     NUM_LINE = 'nline'
@@ -312,7 +315,15 @@ class FileUtil(object):
         return bool(stat_result.st_mode & stat.S_IXUSR)
 
     @staticmethod
-    def get_suitable_exp_and_unit(size: float, base: int) -> Tuple[int, SizeUnit]:
+    def get_size_base(unit: SizeUnit) -> int:
+        if unit in {SizeUnit.B, SizeUnit.KIB, SizeUnit.MIB,
+                    SizeUnit.GIB, SizeUnit.TIB, SizeUnit.PIB, SizeUnit.AUTO}:
+            return BaseUnit.IEC.value
+
+        return BaseUnit.SI.value
+
+    @staticmethod
+    def get_best_exp_and_unit(size: float, base: int) -> Tuple[int, SizeUnit]:
         assert size >= 0
 
         std_sizes = [base, base ** 2, base ** 3, base ** 4, base ** 5]
@@ -329,16 +340,6 @@ class FileUtil(object):
         return 5, SizeUnit.PIB if base == BaseUnit.IEC.value else SizeUnit.PB
 
     @staticmethod
-    def get_size_desc(size: float, base: int, unit: SizeUnit = SizeUnit.AUTO) -> str:
-        if unit == SizeUnit.AUTO:
-            exp, unit = FileUtil.get_suitable_exp_and_unit(size, base)
-        else:
-            exp = FileUtil.get_size_exp(unit)
-
-        precision = '.0f' if unit == SizeUnit.B else '.3f'
-        return f'{size / (base ** exp):{precision}} {unit.value}'
-
-    @staticmethod
     def get_size_exp(unit: SizeUnit) -> int:
         if unit == SizeUnit.B:
             return 0
@@ -351,6 +352,18 @@ class FileUtil(object):
         if unit == SizeUnit.TIB or unit == SizeUnit.TB:
             return 4
         return 5
+
+    @staticmethod
+    def get_size_desc(size: float, unit: SizeUnit = SizeUnit.AUTO) -> str:
+        base = FileUtil.get_size_base(unit)
+
+        if unit == SizeUnit.AUTO:
+            exp, unit = FileUtil.get_best_exp_and_unit(size, BaseUnit.IEC.value)
+        else:
+            exp = FileUtil.get_size_exp(unit)
+
+        precision = '.0f' if unit == SizeUnit.B else '.3f'
+        return f'{size / (base ** exp):{precision}} {unit.value}'
 
 
 class GenericUtil(object):
@@ -976,15 +989,15 @@ def compare_entry(a, b):
 
 
 def count_size_range(size_count_dict: Dict,
-                     base: int = BaseUnit.IEC.value,
                      unit: SizeUnit = SizeUnit.B):
+    base = FileUtil.get_size_base(unit)
     std_sizes = [base, base ** 2, base ** 3, base ** 4, base ** 5]
 
     range_count = {}
     for size, count in size_count_dict.items():
         for idx, std_size in enumerate(std_sizes):
             if size <= std_size or idx == len(std_sizes) - 1:
-                std_size_desc = FileUtil.get_size_desc(std_size, base=base, unit=unit)
+                std_size_desc = FileUtil.get_size_desc(std_size, unit=unit)
                 key = f'≤ {std_size_desc}' if size <= std_size else f'> {std_size_desc}'
                 range_count.setdefault(key, 0)
                 range_count[key] += count
@@ -992,27 +1005,30 @@ def count_size_range(size_count_dict: Dict,
     return range_count
 
 
-def get_size_dict(args, file_stats, base, unit):
+def get_size_dict(args, file_stats, unit):
     new_size_dict = {}
     if FileInfo.SIZE.value not in file_stats.data:
         return new_size_dict
 
     data = file_stats.data[FileInfo.SIZE.value]
 
-    if args.size_range and not args.detail:
-        new_size_dict = count_size_range(data, base=base, unit=unit)
-    elif args.detail:
+    if args.detail:
+        # pathname, size
         for pathname, size in data.items():
-            new_size_dict[pathname] = FileUtil.get_size_desc(size, base, unit)
+            new_size_dict[pathname] = FileUtil.get_size_desc(size, unit)
+    elif args.size_range:
+        # size range, number of files
+        new_size_dict = count_size_range(data, unit=unit)
     else:
+        # size, number of files
         for size, num in data.items():
-            size_desc = FileUtil.get_size_desc(size, base, unit)
+            size_desc = FileUtil.get_size_desc(size, unit)
             new_size_dict[size_desc] = num
 
     return new_size_dict
 
 
-def get_additional_size_stats(stats_data, base, unit):
+def get_additional_size_stats(stats_data, unit):
     total_size = 0
     total_file = 0
     max_size = 0
@@ -1058,18 +1074,18 @@ def get_additional_size_stats(stats_data, base, unit):
             p99_size = size
 
     return {
-        SizeStats.MIN: FileUtil.get_size_desc(min_size, base, unit),
-        SizeStats.MAX: FileUtil.get_size_desc(max_size, base, unit),
-        SizeStats.AVG: FileUtil.get_size_desc(avg_size, base, unit),
-        SizeStats.MEDIAN: FileUtil.get_size_desc(median_size, base, unit),
+        SizeStats.MIN: FileUtil.get_size_desc(min_size, unit),
+        SizeStats.MAX: FileUtil.get_size_desc(max_size, unit),
+        SizeStats.AVG: FileUtil.get_size_desc(avg_size, unit),
+        SizeStats.MEDIAN: FileUtil.get_size_desc(median_size, unit),
         SizeStats.RANGE: size_range,
-        SizeStats.MODE: FileUtil.get_size_desc(size_mode, base, unit),
+        SizeStats.MODE: FileUtil.get_size_desc(size_mode, unit),
         SizeStats.VARIANCE: size_var,
         SizeStats.STDDEV: size_stddev,
-        SizeStats.P90: FileUtil.get_size_desc(p90_size, base, unit),
-        SizeStats.P95: FileUtil.get_size_desc(p95_size, base, unit),
-        SizeStats.P99: FileUtil.get_size_desc(p99_size, base, unit),
-        SizeStats.TOTAL_SIZE: FileUtil.get_size_desc(total_size, base, unit),
+        SizeStats.P90: FileUtil.get_size_desc(p90_size, unit),
+        SizeStats.P95: FileUtil.get_size_desc(p95_size, unit),
+        SizeStats.P99: FileUtil.get_size_desc(p99_size, unit),
+        SizeStats.TOTAL_SIZE: FileUtil.get_size_desc(total_size, unit),
         SizeStats.NUM_FILE: total_file
     }
 
@@ -1113,7 +1129,7 @@ def export_csv(file_stats, output):
                 csv_writer.writerows(GenericUtil.flatten_dict(stats_data))
 
 
-def export_table(args, file_stats, stats_type_set, new_size_dict, base, unit):
+def export_table(args, file_stats, stats_type_set, new_size_dict, unit):
     output_results = []
     if not args.quiet:
         # elapsed time
@@ -1138,7 +1154,7 @@ def export_table(args, file_stats, stats_type_set, new_size_dict, base, unit):
 
         # Statistics: Max, Min, Avg, Total, ...
         if stats_type == FileInfo.SIZE.value and not args.detail:
-            size_stats = get_additional_size_stats(file_stats.data[FileInfo.SIZE.value], base, unit)
+            size_stats = get_additional_size_stats(file_stats.data[FileInfo.SIZE.value], unit)
             output_results.append('')
             output_results.append('Additional Size Statistics:')
             size_stats_header = []
@@ -1216,11 +1232,6 @@ def main():
                            jobs=jobs,
                            ignore_hidden_file=args.ignore_hidden_file)
 
-    if args.si:
-        base = BaseUnit.SI.value
-    else:
-        base = BaseUnit.IEC.value
-
     if args.k:
         unit = SizeUnit.KB if args.si else SizeUnit.KIB
     elif args.m:
@@ -1236,7 +1247,7 @@ def main():
     else:
         unit = SizeUnit.B
 
-    new_size_dict = get_size_dict(args, file_stats, base, unit)
+    new_size_dict = get_size_dict(args, file_stats, unit)
     if (args.json or args.csv) and FileInfo.SIZE.value in file_stats.data:
         file_stats.data[FileInfo.SIZE.value] = new_size_dict
 
@@ -1245,7 +1256,7 @@ def main():
     elif args.csv:
         export_csv(file_stats, args.output)
     else:
-        export_table(args, file_stats, stats_type_set, new_size_dict, base, unit)
+        export_table(args, file_stats, stats_type_set, new_size_dict, unit)
 
     if args.plot_type:
         if args.plot_name:
