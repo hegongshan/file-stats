@@ -120,6 +120,9 @@ class SizeUnit(Enum):
     # best suitable unit
     AUTO = 'auto'
 
+    # without unit
+    RAW = 'raw'
+
 
 class SizeStats(Enum):
     MIN = 'min'
@@ -316,7 +319,7 @@ class FileUtil(object):
 
     @staticmethod
     def get_size_base(unit: SizeUnit) -> int:
-        if unit in {SizeUnit.B, SizeUnit.KIB, SizeUnit.MIB,
+        if unit in {SizeUnit.RAW, SizeUnit.B, SizeUnit.KIB, SizeUnit.MIB,
                     SizeUnit.GIB, SizeUnit.TIB, SizeUnit.PIB, SizeUnit.AUTO}:
             return BaseUnit.IEC.value
 
@@ -341,7 +344,7 @@ class FileUtil(object):
 
     @staticmethod
     def get_size_exp(unit: SizeUnit) -> int:
-        if unit == SizeUnit.B:
+        if unit == SizeUnit.B or unit == SizeUnit.RAW:
             return 0
         if unit == SizeUnit.KIB or unit == SizeUnit.KB:
             return 1
@@ -362,8 +365,12 @@ class FileUtil(object):
         else:
             exp = FileUtil.get_size_exp(unit)
 
-        precision = '.0f' if unit == SizeUnit.B else '.3f'
-        return f'{size / (base ** exp):{precision}} {unit.value}'
+        new_size = size / (base ** exp)
+        precision = '.0f' if GenericUtil.is_integer(new_size) else '.3f'
+
+        if unit == SizeUnit.RAW:
+            return f'{new_size:{precision}}'
+        return f'{new_size:{precision}} {unit.value}'
 
 
 class GenericUtil(object):
@@ -390,6 +397,10 @@ class GenericUtil(object):
     @staticmethod
     def print_error(message: str) -> None:
         print(f'\033[91m{message}\033[0m')
+
+    @staticmethod
+    def is_integer(value: float) -> bool:
+        return value % 1 == 0
 
 
 class PlotUtil(object):
@@ -852,6 +863,9 @@ def parse_args():
 
     # Size options
     size_group = parser.add_mutually_exclusive_group()
+    size_group.add_argument('--raw',
+                            action='store_true',
+                            help='Do not show B unit suffix')
     size_group.add_argument('-H', '--human-readable',
                             action='store_true',
                             help='Human-readable output. ')
@@ -1251,6 +1265,8 @@ def main():
         unit = SizeUnit.PB if args.si else SizeUnit.PIB
     elif args.human_readable:
         unit = SizeUnit.AUTO
+    elif args.raw:
+        unit = SizeUnit.RAW
     else:
         unit = SizeUnit.B
 
