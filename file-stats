@@ -930,9 +930,6 @@ def parse_args():
                         type=str,
                         choices=[p.value for p in PlotType],
                         help='Specify the type of the figure')
-    parser.add_argument('--plot-name',
-                        type=str,
-                        help='Specify the name of the figure')
     return parser.parse_args()
 
 
@@ -1150,9 +1147,34 @@ def export_csv(file_stats, output):
                 csv_writer.writerows(GenericUtil.flatten_dict(stats_data))
 
 
-def export_table(args, file_stats, stats_type_set, new_size_dict, unit):
+def export_figure(file_stats, stats_type_set, plot_type, output):
+    if output:
+        filename, ext = os.path.splitext(output)
+        if not ext:
+            ext = '.pdf'
+    else:
+        filename, ext = '', ''
+
+    only_one_entry = len(file_stats.data) == 1
+    for stats_type in stats_type_set:
+        if stats_type == FileInfo.NUM_FILE:
+            continue
+
+        if not output:
+            name = None
+        elif only_one_entry:
+            name = f'{filename}{ext}'
+        else:
+            name = f'{filename}_{stats_type}{ext}'
+
+        PlotUtil.plot(GenericUtil.flatten_dict(file_stats.data[stats_type]),
+                      name,
+                      plot_type)
+
+
+def export_table(file_stats, stats_type_set, new_size_dict, unit, quiet, output):
     output_results = []
-    if not args.quiet:
+    if not quiet:
         # elapsed time
         output_results.append(f'{PROJECT_URL}  Time = {file_stats.time:.3f} s')
     for stats_type in stats_type_set:
@@ -1188,10 +1210,10 @@ def export_table(args, file_stats, stats_type_set, new_size_dict, unit):
     out = '\n'.join(output_results)
 
     # Output
-    if not args.output:
+    if not output:
         print(out)
     else:
-        with open(args.output, 'w+') as file:
+        with open(output, 'w+') as file:
             file.write(f'{out}\n')
 
 
@@ -1278,27 +1300,10 @@ def main():
         export_json(file_stats, args.output)
     elif args.csv:
         export_csv(file_stats, args.output)
+    elif args.plot_type:
+        export_figure(file_stats, stats_type_set, args.plot_type, args.output)
     else:
-        export_table(args, file_stats, stats_type_set, new_size_dict, unit)
-
-    if args.plot_type:
-        if args.plot_name:
-            filename, ext = os.path.splitext(args.plot_name)
-            if not ext:
-                ext = '.pdf'
-        else:
-            filename, ext = '', ''
-
-        suffix = 0
-        for stats_type in stats_type_set:
-            if stats_type == FileInfo.NUM_FILE:
-                continue
-
-            name = f'{filename}_{suffix}{ext}' if args.plot_name else None
-            PlotUtil.plot(GenericUtil.flatten_dict(file_stats.data[stats_type]),
-                          name,
-                          args.plot_type)
-            suffix += 1
+        export_table(file_stats, stats_type_set, new_size_dict, unit, args.quiet, args.output)
 
 
 if __name__ == "__main__":
