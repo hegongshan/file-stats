@@ -525,6 +525,10 @@ class FileStats(object):
     def data(self) -> Dict:
         return self._data_dict
 
+    @property
+    def stats_type_set(self) -> Set[str]:
+        return self._stats_set
+
     def _count(self, dirname):
         if self._jobs == 1:
             self._count_internal(dirname)
@@ -924,12 +928,10 @@ def parse_args():
                               '--csv',
                               action='store_true',
                               help='Export the results in CSV format.')
-
-    # Plot options
-    parser.add_argument('--plot-type',
-                        type=str,
-                        choices=[p.value for p in PlotType],
-                        help='Specify the type of the figure')
+    export_group.add_argument('--plot-type',
+                              type=str,
+                              choices=[p.value for p in PlotType],
+                              help='Specify the type of the figure')
     return parser.parse_args()
 
 
@@ -1147,7 +1149,7 @@ def export_csv(file_stats, output):
                 csv_writer.writerows(GenericUtil.flatten_dict(stats_data))
 
 
-def export_figure(file_stats, stats_type_set, plot_type, output):
+def export_figure(file_stats, plot_type, output):
     if output:
         filename, ext = os.path.splitext(output)
         if not ext:
@@ -1156,7 +1158,7 @@ def export_figure(file_stats, stats_type_set, plot_type, output):
         filename, ext = '', ''
 
     only_one_entry = len(file_stats.data) == 1
-    for stats_type in stats_type_set:
+    for stats_type in file_stats.stats_type_set:
         if stats_type == FileInfo.NUM_FILE:
             continue
 
@@ -1172,12 +1174,12 @@ def export_figure(file_stats, stats_type_set, plot_type, output):
                       plot_type)
 
 
-def export_table(file_stats, stats_type_set, new_size_dict, unit, quiet, output):
+def export_table(file_stats, new_size_dict, unit, quiet, output):
     output_results = []
     if not quiet:
         # elapsed time
         output_results.append(f'{PROJECT_URL}  Time = {file_stats.time:.3f} s')
-    for stats_type in stats_type_set:
+    for stats_type in file_stats.stats_type_set:
         th = file_stats.header(stats_type=stats_type)
         data = file_stats.data[stats_type]
         if not data:
@@ -1301,9 +1303,9 @@ def main():
     elif args.csv:
         export_csv(file_stats, args.output)
     elif args.plot_type:
-        export_figure(file_stats, stats_type_set, args.plot_type, args.output)
+        export_figure(file_stats, args.plot_type, args.output)
     else:
-        export_table(file_stats, stats_type_set, new_size_dict, unit, args.quiet, args.output)
+        export_table(file_stats, new_size_dict, unit, args.quiet, args.output)
 
 
 if __name__ == "__main__":
