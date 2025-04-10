@@ -128,14 +128,16 @@ class SizeStats(Enum):
     MIN = 'min'
     MAX = 'max'
     AVG = 'avg'
+    GEOMETRIC_MEAN = 'geometric mean'
     MEDIAN = 'median'
-    RANGE = 'range'
     MODE = 'mode'
+    RANGE = 'range'
+    P90 = '90th percentile'
+    P95 = '95th percentile'
+    P99 = '99th percentile'
+    P999 = '99.9th percentile'
     VARIANCE = 'variance'
     STDDEV = 'stddev'
-    P90 = 'p90'
-    P95 = 'p95'
-    P99 = 'p99'
     TOTAL_SIZE = 'total_size'
     NUM_FILE = 'number_of_files'
 
@@ -1044,6 +1046,7 @@ def get_size_dict(args, file_stats, unit):
 def get_additional_size_stats(stats_data, unit, detail_mode):
     total_size = 0
     total_file = 0
+    size_list = []
     max_size = 0
     min_size = math.inf
     size_mode, max_num = 0, 0
@@ -1057,6 +1060,8 @@ def get_additional_size_stats(stats_data, unit, detail_mode):
     for size, num in stats_data.items():
         total_size += size * num
         total_file += num
+        size_list.extend([size] * num)
+
         if size > max_size:
             max_size = size
         if size < min_size:
@@ -1068,6 +1073,10 @@ def get_additional_size_stats(stats_data, unit, detail_mode):
     size_range = max_size - min_size
     avg_size = total_size / total_file
 
+    geometric_mean = 1
+    for size in map(lambda val: val ** (1 / total_file), size_list):
+        geometric_mean *= size
+
     tmp_sum = 0
     for size, num in stats_data.items():
         tmp_sum += num * ((size - avg_size) ** 2)
@@ -1076,7 +1085,7 @@ def get_additional_size_stats(stats_data, unit, detail_mode):
 
     stats_data_list = sorted(GenericUtil.flatten_dict(stats_data),
                              key=lambda x: x[0])
-    median_size, p90_size, p95_size, p99_size = 0, 0, 0, 0
+    median_size, p90_size, p95_size, p99_size, p999_size = 0, 0, 0, 0, 0
     num_sum = 0
     for size, num in stats_data_list:
         num_sum += num
@@ -1093,18 +1102,23 @@ def get_additional_size_stats(stats_data, unit, detail_mode):
         if 0.99 <= percent and p99_size == 0:
             p99_size = size
 
+        if 0.999 <= percent and p999_size == 0:
+            p999_size = size
+
     return {
         SizeStats.MIN: FileUtil.get_size_desc(min_size, unit),
         SizeStats.MAX: FileUtil.get_size_desc(max_size, unit),
         SizeStats.AVG: FileUtil.get_size_desc(avg_size, unit),
+        SizeStats.GEOMETRIC_MEAN: FileUtil.get_size_desc(geometric_mean, unit),
         SizeStats.MEDIAN: FileUtil.get_size_desc(median_size, unit),
-        SizeStats.RANGE: size_range,
         SizeStats.MODE: FileUtil.get_size_desc(size_mode, unit),
-        SizeStats.VARIANCE: f'{size_var:.3f}',
-        SizeStats.STDDEV: f'{size_stddev:.3f}',
+        SizeStats.RANGE: size_range,
         SizeStats.P90: FileUtil.get_size_desc(p90_size, unit),
         SizeStats.P95: FileUtil.get_size_desc(p95_size, unit),
         SizeStats.P99: FileUtil.get_size_desc(p99_size, unit),
+        SizeStats.P999: FileUtil.get_size_desc(p999_size, unit),
+        SizeStats.VARIANCE: f'{size_var:.3f}',
+        SizeStats.STDDEV: f'{size_stddev:.3f}',
         SizeStats.TOTAL_SIZE: FileUtil.get_size_desc(total_size, unit),
         SizeStats.NUM_FILE: total_file
     }
