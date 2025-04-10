@@ -1174,7 +1174,7 @@ def export_figure(file_stats, plot_type, output):
                       plot_type)
 
 
-def export_table(file_stats, new_size_dict, unit, quiet, output):
+def export_table(file_stats, new_size_dict, unit, quiet, detail, output):
     output_results = []
     if not quiet:
         # elapsed time
@@ -1199,7 +1199,7 @@ def export_table(file_stats, new_size_dict, unit, quiet, output):
 
         # Statistics: Max, Min, Avg, Total, ...
         if stats_type == FileInfo.SIZE.value:
-            size_stats = get_additional_size_stats(file_stats.data[FileInfo.SIZE.value], unit, args.detail)
+            size_stats = get_additional_size_stats(file_stats.data[FileInfo.SIZE.value], unit, detail)
             output_results.append('')
             output_results.append('Additional Size Statistics:')
             size_stats_header = []
@@ -1305,7 +1305,7 @@ def main():
     elif args.plot_type:
         export_figure(file_stats, args.plot_type, args.output)
     else:
-        export_table(file_stats, new_size_dict, unit, args.quiet, args.output)
+        export_table(file_stats, new_size_dict, unit, args.quiet, args.detail, args.output)
 
 
 if __name__ == "__main__":
