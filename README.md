@@ -5,11 +5,11 @@
 ```shell
 $ ./file-stats -h
 usage: file-stats [-h] -r ROOTDIR
-                  [-s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} ...]]
-                  [-j [JOBS]] [-i] [-v] [-q] [--exclude-dirs EXCLUDE_DIRS] [--exclude-files EXCLUDE_FILES]
-                  [--exclude-exts EXCLUDE_EXTS] [--exclude-pattern EXCLUDE_PATTERN]
-                  [-H | -k | -m | -g | -t | -p | --si] [--size-range] [--per-file] [-n] [-f] [-o OUTPUT]
-                  [-J | -C] [--plot-type {bar,pie,cdf}] [--plot-name PLOT_NAME]
+                  [-s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock,archive,compress,encrypted,readonly,appendonly,executable} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock,archive,compress,encrypted,readonly,appendonly,executable} ...]]
+                  [-j [JOBS]] [-i] [--detail] [-v] [-q] [--exclude-dirs EXCLUDE_DIRS]
+                  [--exclude-files EXCLUDE_FILES] [--exclude-exts EXCLUDE_EXTS]
+                  [--exclude-pattern EXCLUDE_PATTERN] [--raw | -H | -k | -m | -g | -t | -p] [--si]
+                  [--size-range] [-n] [--symbol] [-f] [-o OUTPUT] [-J | -C | --plot-type {bar,pie,cdf}]
 
 file-stats - Command-line based File Statistics Tool
 
@@ -17,12 +17,13 @@ options:
   -h, --help            show this help message and exit
   -r ROOTDIR, --rootdir ROOTDIR
                         Root directory
-  -s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} ...], --stats {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock} ...]
+  -s {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock,archive,compress,encrypted,readonly,appendonly,executable} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock,archive,compress,encrypted,readonly,appendonly,executable} ...], --stats {type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock,archive,compress,encrypted,readonly,appendonly,executable} [{type,perm,size,nlink,uid,gid,ctime,mtime,btime,ext,nfile,nline,nhidden,nblock,archive,compress,encrypted,readonly,appendonly,executable} ...]
                         Stats type
   -j [JOBS], --jobs [JOBS]
                         Specify the number of jobs to run simultaneously
   -i, --ignore-hidden-file
                         Ignore hidden files
+  --detail              Show detail
   -v, --verbose         Verbose mode
   -q, --quiet           Quiet mode
   --exclude-dirs EXCLUDE_DIRS
@@ -33,17 +34,17 @@ options:
                         Exclude file name extensions
   --exclude-pattern EXCLUDE_PATTERN
                         UNIX shell pattern
-  -H, --human-readable  Human-readable output. Use unit suffixes: Byte, Kilobyte, Megabyte, Gigabyte,
-                        Terabyte and Petabyte based on powers of 1024.
-  -k, --ki              Use KiB
-  -m, --mi              Use MiB
-  -g, --gi              Use GiB
-  -t, --ti              Use TiB
-  -p, --pi              Use PiB
+  --raw                 Do not show B unit suffix
+  -H, --human-readable  Human-readable output.
+  -k                    Use KiB, or KB with --si
+  -m                    Use MiB, or MB with --si
+  -g                    Use GiB, or GB with --si
+  -t                    Use TiB, or TB with --si
+  -p                    Use PiB, or PB with --si
   --si                  Use international system of units (SI)
   --size-range          Show size range
-  --per-file            Show the size of each file
   -n, --name            Show user name or group name
+  --symbol              Show symbolic permission
   -f, --full-path       Print the full path for each file
   -o OUTPUT, --output OUTPUT
                         Output file
@@ -51,6 +52,4 @@ options:
   -C, --csv             Export the results in CSV format.
   --plot-type {bar,pie,cdf}
                         Specify the type of the figure
-  --plot-name PLOT_NAME
-                        Specify the name of the figure
 ```
