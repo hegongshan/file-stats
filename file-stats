@@ -1212,7 +1212,7 @@ def export_table(file_stats, new_size_dict, unit, quiet, detail, output):
         output_results.extend(get_table(th, nested_list))
 
         # Statistics: Max, Min, Avg, Total, ...
-        if stats_type == FileInfo.SIZE.value:
+        if not quiet and stats_type == FileInfo.SIZE.value:
             size_stats = get_additional_size_stats(file_stats.data[FileInfo.SIZE.value], unit, detail)
             output_results.append('')
             output_results.append('Additional Size Statistics:')
