@@ -11,7 +11,7 @@ usage: file-stats [-h] -r ROOTDIR
                   [--exclude-pattern EXCLUDE_PATTERN] [--raw | -H | -k | -m | -g | -t | -p] [--si]
                   [--size-range] [-n] [--symbol] [-f] [-o OUTPUT] [-J | -C | --plot-type {bar,pie,cdf}]
 
-file-stats - Command-line based File Statistics Tool
+file-stats - Command-line based File Information Statistics Tool
 
 options:
   -h, --help            show this help message and exit
