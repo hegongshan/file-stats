@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 author: Gongshan He
-description: Command-line based File Statistics Tool (file-stats)
+description: Command-line based File Information Statistics Tool (file-stats)
 """
 ##################################################################
 #                         Version Check                          #
@@ -36,7 +36,7 @@ from functools import cmp_to_key
 PROJECT_NAME = 'file-stats'
 PROJECT_VERSION = '1.0'
 PROJECT_URL = f'github.com/hegongshan/{PROJECT_NAME} v{PROJECT_VERSION}'
-PROJECT_DESCRIPTION = f'{PROJECT_NAME} - Command-line based File Statistics Tool'
+PROJECT_DESCRIPTION = f'{PROJECT_NAME} - Command-line based File Information Statistics Tool'
 
 PATTERN = ', *'
 SEPARATOR = '-'

@@ -1,4 +1,4 @@
-### Command-line based File Statistics Tool (file-stats)
+### Command-line based File Information Statistics Tool (file-stats)
 
 * Usage
 
