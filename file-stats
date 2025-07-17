@@ -635,8 +635,12 @@ class FileStats(object):
             if FileInfo.UID.value in self._stats_set:
                 uid = file_stat.st_uid
                 if self._use_name:
-                    import pwd
-                    uid = pwd.getpwuid(uid).pw_name
+                    try:
+                        import pwd
+                        uid = pwd.getpwuid(uid).pw_name
+                    except ImportError:
+                        GenericUtil.print_error('Unsupported module: \'pwd\'')
+                        exit(1)
 
                 self._acquire()
                 if self._detail:
@@ -649,8 +653,12 @@ class FileStats(object):
             if FileInfo.GID.value in self._stats_set:
                 gid = file_stat.st_gid
                 if self._use_name:
-                    import grp
-                    gid = grp.getgrgid(gid).gr_name
+                    try:
+                        import grp
+                        gid = grp.getgrgid(gid).gr_name
+                    except ImportError:
+                        GenericUtil.print_error('Unsupported module: \'grp\'')
+                        exit(1)
 
                 self._acquire()
                 if self._detail:
