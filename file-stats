@@ -29,6 +29,7 @@ from time import time
 from typing import Dict, Tuple, List, Set
 from collections import defaultdict, OrderedDict
 from functools import cmp_to_key
+import threading
 
 ##################################################################
 #                            Constant                            #
@@ -511,7 +512,9 @@ class FileStats(object):
         self._use_symbol = use_symbol
         self._verbose = verbose
         self._ignore_hidden_file = ignore_hidden_file
+
         self._jobs = jobs
+        self._lock = threading.Lock()
 
         self._data_dict = defaultdict(dict)
 
@@ -531,12 +534,20 @@ class FileStats(object):
     def stats_type_set(self) -> Set[str]:
         return self._stats_set
 
+    def _acquire(self):
+        if self._jobs > 1:
+            self._lock.acquire()
+
+    def _release(self):
+        if self._jobs > 1:
+            self._lock.release()
+
     def _count(self, dirname):
         if self._jobs == 1:
             self._count_internal(dirname)
         else:
             subdir = self._count_internal(dirname, recursive=False)
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self._jobs) as executor:
                 executor.map(self._count_internal, subdir)
 
     def _count_internal(self, dirname, recursive=True) -> List:
@@ -576,11 +587,13 @@ class FileStats(object):
                 continue
 
             if FileInfo.TYPE.value in self._stats_set:
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.TYPE.value][pathname] = file_type
                 else:
                     self._data_dict[FileInfo.TYPE.value].setdefault(file_type, 0)
                     self._data_dict[FileInfo.TYPE.value][file_type] += 1
+                self._release()
 
             if FileInfo.PERM.value in self._stats_set:
                 if self._use_symbol:
@@ -588,6 +601,7 @@ class FileStats(object):
                 else:
                     perm = oct(file_stat.st_mode)[-3:]
 
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.PERM.value][pathname] = perm
                 else:
@@ -595,22 +609,28 @@ class FileStats(object):
                     self._data_dict[FileInfo.PERM.value][file_type].setdefault(perm, 0)
                     self._data_dict[FileInfo.PERM.value][file_type][perm] += 1
 
+                self._release()
+
             if FileInfo.SIZE.value in self._stats_set and not is_dir:
                 size = file_stat.st_size
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.SIZE.value][pathname] = size
                 else:
                     self._data_dict[FileInfo.SIZE.value].setdefault(size, 0)
                     self._data_dict[FileInfo.SIZE.value][size] += 1
+                self._release()
 
             if FileInfo.NUM_LINK.value in self._stats_set:
                 nlink = file_stat.st_nlink
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.NUM_LINK.value][pathname] = nlink
                 else:
                     self._data_dict[FileInfo.NUM_LINK.value].setdefault(file_type, {})
                     self._data_dict[FileInfo.NUM_LINK.value][file_type].setdefault(nlink, 0)
                     self._data_dict[FileInfo.NUM_LINK.value][file_type][nlink] += 1
+                self._release()
 
             if FileInfo.UID.value in self._stats_set:
                 uid = file_stat.st_uid
@@ -618,11 +638,13 @@ class FileStats(object):
                     import pwd
                     uid = pwd.getpwuid(uid).pw_name
 
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.UID.value][pathname] = uid
                 else:
                     self._data_dict[FileInfo.UID.value].setdefault(uid, 0)
                     self._data_dict[FileInfo.UID.value][uid] += 1
+                self._release()
 
             if FileInfo.GID.value in self._stats_set:
                 gid = file_stat.st_gid
@@ -630,101 +652,131 @@ class FileStats(object):
                     import grp
                     gid = grp.getgrgid(gid).gr_name
 
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.GID.value][pathname] = gid
                 else:
                     self._data_dict[FileInfo.GID.value].setdefault(gid, 0)
                     self._data_dict[FileInfo.GID.value][gid] += 1
+                self._release()
 
             fmt = '%Y-%m-%d %H:%M:%S' if self._detail else '%Y-%m-%d'
             if FileInfo.CHANGE_TIME.value in self._stats_set:
                 ctime = file_stat.st_ctime
                 date = datetime.fromtimestamp(ctime).strftime(fmt)
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.CHANGE_TIME.value][pathname] = date
                 else:
                     self._data_dict[FileInfo.CHANGE_TIME.value].setdefault(date, 0)
                     self._data_dict[FileInfo.CHANGE_TIME.value][date] += 1
+                self._release()
 
             if FileInfo.MODIFICATION_TIME.value in self._stats_set:
                 mtime = file_stat.st_mtime
                 date = datetime.fromtimestamp(mtime).strftime(fmt)
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.MODIFICATION_TIME.value][pathname] = date
                 else:
                     self._data_dict[FileInfo.MODIFICATION_TIME.value].setdefault(date, 0)
                     self._data_dict[FileInfo.MODIFICATION_TIME.value][date] += 1
+                self._release()
 
             if FileInfo.BIRTH_TIME.value in self._stats_set:
                 btime = file_stat.st_birthtime
                 date = datetime.fromtimestamp(btime).strftime(fmt)
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.BIRTH_TIME.value][pathname] = date
                 else:
                     self._data_dict[FileInfo.BIRTH_TIME.value].setdefault(date, 0)
                     self._data_dict[FileInfo.BIRTH_TIME.value][date] += 1
+                self._release()
 
             if (FileInfo.EXTENSION.value in self._stats_set
                     and file_type == FileType.FILE.value):
                 ext = os.path.splitext(filename)[1]
                 ext = ext if ext else UNKNOWN
+                self._acquire()
                 if self._detail:
                     self._data_dict[FileInfo.EXTENSION.value][pathname] = ext
                 else:
                     self._data_dict[FileInfo.EXTENSION.value].setdefault(ext, 0)
                     self._data_dict[FileInfo.EXTENSION.value][ext] += 1
+                self._release()
 
             if FileInfo.NUM_FILE.value in self._stats_set:
+                self._acquire()
                 self._data_dict[FileInfo.NUM_FILE.value].setdefault(dirname, {})
                 for ft in FileType:
                     self._data_dict[FileInfo.NUM_FILE.value][dirname].setdefault(ft.value, 0)
                 self._data_dict[FileInfo.NUM_FILE.value][dirname][file_type] += 1
+                self._release()
 
             if (FileInfo.NUM_LINE.value in self._stats_set
                     and file_type == FileType.FILE.value):
+                self._acquire()
                 self._data_dict[FileInfo.NUM_LINE.value].setdefault(pathname, {})
                 self._data_dict[FileInfo.NUM_LINE.value][pathname] = FileUtil.calculate_file_lines(pathname)
+                self._release()
 
             if (FileInfo.NUM_HIDDEN_FILE.value in self._stats_set
                     and FileUtil.is_hidden(pathname)):
+                self._acquire()
                 self._data_dict[FileInfo.NUM_HIDDEN_FILE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.NUM_HIDDEN_FILE.value][dirname] += 1
+                self._release()
 
             if FileInfo.NUM_BLOCK.value in self._stats_set:
+                self._acquire()
                 self._data_dict[FileInfo.NUM_BLOCK.value][pathname] = file_stat.st_blocks
+                self._release()
 
             if (FileInfo.ARCHIVE.value in self._stats_set
                     and FileUtil.is_archive(pathname)):
+                self._acquire()
                 self._data_dict[FileInfo.ARCHIVE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.ARCHIVE.value][dirname] += 1
+                self._release()
 
             if (FileInfo.COMPRESSED.value in self._stats_set
                     and FileUtil.is_compressed(pathname)):
+                self._acquire()
                 self._data_dict[FileInfo.COMPRESSED.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.COMPRESSED.value][dirname] += 1
+                self._release()
 
             if (FileInfo.ENCRYPTED.value in self._data_dict
                     and FileUtil.is_encrypted(pathname)):
+                self._acquire()
                 self._data_dict[FileInfo.ENCRYPTED.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.ENCRYPTED.value][dirname] += 1
+                self._release()
 
             if (FileInfo.READONLY.value in self._stats_set
                     and FileUtil.is_readonly(pathname)):
+                self._acquire()
                 self._data_dict[FileInfo.READONLY.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.READONLY.value][dirname] += 1
+                self._release()
 
             if FileInfo.APPENDONLY.value in self._stats_set and FileUtil.is_appendonly(pathname):
+                self._acquire()
                 self._data_dict[FileInfo.APPENDONLY.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.APPENDONLY.value][dirname] += 1
+                self._release()
 
             if (FileInfo.EXECUTABLE.value in self._stats_set
                     and not is_dir
                     and FileUtil.is_executable(pathname)):
+                self._acquire()
                 self._data_dict[FileInfo.EXECUTABLE.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.EXECUTABLE.value][dirname] += 1
+                self._release()
 
             if is_dir and recursive:
-                self._count(pathname)
+                self._count_internal(pathname)
             else:
                 subdir.append(pathname)
 
