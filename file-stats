@@ -755,7 +755,7 @@ class FileStats(object):
                 self._data_dict[FileInfo.COMPRESSED.value][dirname] += 1
                 self._release()
 
-            if (FileInfo.ENCRYPTED.value in self._data_dict
+            if (FileInfo.ENCRYPTED.value in self._stats_set
                     and FileUtil.is_encrypted(pathname)):
                 self._acquire()
                 self._data_dict[FileInfo.ENCRYPTED.value].setdefault(dirname, 0)
@@ -769,7 +769,8 @@ class FileStats(object):
                 self._data_dict[FileInfo.READONLY.value][dirname] += 1
                 self._release()
 
-            if FileInfo.APPENDONLY.value in self._stats_set and FileUtil.is_appendonly(pathname):
+            if (FileInfo.APPENDONLY.value in self._stats_set
+                    and FileUtil.is_appendonly(pathname)):
                 self._acquire()
                 self._data_dict[FileInfo.APPENDONLY.value].setdefault(dirname, 0)
                 self._data_dict[FileInfo.APPENDONLY.value][dirname] += 1
